@@ -1,0 +1,14 @@
+[package]
+name = "spreadsheet"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lazy_static = "1.4.0"
+
+# Optional: Add these if you want better error handling and string manipulation
+anyhow = "1.0"    # For easier error handling
+regex = "1.5"     # For more complex string parsing if needed
+
+# Optional: Add this if you want to preserve the exact sleep functionality
+tokio = { version = "1.0", features = ["time"] }  # For async sleep functionality
