@@ -251,7 +251,10 @@ pub fn is_valid_command(sheet: &mut Sheet, command: &str) -> bool {
     if command == "disable_output" || command == "enable_output" {
         return true;
     }
-    if sheet.extension_enabled && (command == "undo" || command == "redo") {
+    if sheet.extension_enabled && (command == "undo" || command == "redo" || command.starts_with("FORMULA ")) {
+        if command.starts_with("FORMULA ") {
+            return parse_cell_reference(sheet, &command[8..].trim()).is_some();
+        }
         return true;
     }
     if command.starts_with("scroll_to ") {
