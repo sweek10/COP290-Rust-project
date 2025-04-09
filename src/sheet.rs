@@ -425,7 +425,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                 }
                 
                 if func_name.trim().to_uppercase() == "AUTOFILL" {
-                    if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, range_arg) {
+                 if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, range_arg) {
                         // Ensure the range is a single column or row for simplicity
                         if start_col != end_col && start_row != end_row {
                             return; // Only support single column or row for now
@@ -436,10 +436,14 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                             for i in (0.max(start_row - 5)..start_row).rev() { // Fixed j to i
                                 values.push(sheet.cells[i as usize][start_col as usize].value);
                             }
+                            println!("Vertical values: {:?}", values);
                             if values.is_empty() {
+                                println!("no value");
                                 return;
                             }
-                            match detect_pattern(sheet, start_row, start_col) {
+                            let pattern = detect_pattern(sheet, start_row, start_col, end_row, end_col);
+                             println!("Detected pattern: {:?}", pattern); // Debug
+                            match pattern {
                                 PatternType::Constant(value) => {
                                     for i in start_row..=end_row {
                                         let cell = &mut sheet.cells[i as usize][start_col as usize];
@@ -473,6 +477,40 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                                         last = new_value;
                                     }
                                 }
+                                PatternType::Geometric(_initial, ratio) => {
+                                    let last_value = values[0];
+                                    for i in start_row..=end_row {
+                                        let offset = i - (start_row-1);
+                                        let new_value = (last_value as f64 * ratio.powi(offset)).round() as i32;
+                                        let cell = &mut sheet.cells[i as usize][start_col as usize];
+                                        cell.value = new_value;
+                                        cell.formula = None;
+                                        cell.is_formula = false;
+                                        cell.is_error = false;
+                                    }
+                                }
+                                PatternType::Factorial(_last_value, mut next_index) => {
+                                    for i in start_row..=end_row {
+                                        let new_value = factorial(next_index);
+                                        let cell = &mut sheet.cells[i as usize][start_col as usize];
+                                        cell.value = new_value;
+                                        cell.formula = None;
+                                        cell.is_formula = false;
+                                        cell.is_error = false;
+                                        next_index += 1;
+                                    }
+                                }
+                                PatternType::Triangular(_last_value, mut next_index) => {
+                                    for i in start_row..=end_row {
+                                        let new_value = triangular(next_index);
+                                        let cell = &mut sheet.cells[i as usize][start_col as usize];
+                                        cell.value = new_value;
+                                        cell.formula = None;
+                                        cell.is_formula = false;
+                                        cell.is_error = false;
+                                        next_index += 1;
+                                    }
+                                }
                                 PatternType::Unknown => {}
                             }
                         }else if start_row == end_row { // Horizontal autofill
@@ -480,10 +518,14 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
     for j in (0.max(start_col - 5)..start_col).rev() {
         values.push(sheet.cells[start_row as usize][j as usize].value);
     }
+    // println!("Horizontal values: {:?}", values);
     if values.is_empty() {
-        return; // No values to work with
+        // println!("No values for pattern detection");
+        return;
     }
-                            match detect_pattern(sheet, start_row, start_col) {
+    let pattern = detect_pattern(sheet, start_row, start_col, end_row, end_col);
+    // println!("Detected pattern: {:?}", pattern);
+                            match pattern {
                                 PatternType::Constant(value) => {
                                     for j in start_col..=end_col {
                                         let cell = &mut sheet.cells[start_row as usize][j as usize];
@@ -494,9 +536,10 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                                     }
                                 }
                                 PatternType::Arithmetic(initial, diff) => {
+                                    let last_value = values[0]; 
                                     for j in start_col..=end_col {
-                                        let offset = j - (start_col - values.len() as i32);
-                                        let new_value = initial + diff * offset;
+                                        let offset = j - (start_col-1);
+                                        let new_value = last_value - diff * (offset); // Fix: Add diff, adjust offset
                                         let cell = &mut sheet.cells[start_row as usize][j as usize];
                                         cell.value = new_value;
                                         cell.formula = None;
@@ -516,11 +559,45 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                                         last = new_value;
                                     }
                                 }
+                                PatternType::Geometric(initial, ratio) => {
+                                    let last_value = values[0];
+                                    for j in start_col..=end_col { // Fix: Use j instead of i
+                                        let offset = j - (start_col - 1);
+                                        let new_value = (last_value as f64 * ratio.powi(offset)).round() as i32;
+                                        let cell = &mut sheet.cells[start_row as usize][j as usize];
+                                        cell.value = new_value;
+                                        cell.formula = None;
+                                        cell.is_formula = false;
+                                        cell.is_error = false;
+                                    }
+                                }
+                                PatternType::Factorial(_last_value, mut next_index) => {
+                                    for j in start_col..=end_col {
+                                        let new_value = factorial(next_index);
+                                        let cell = &mut sheet.cells[start_row as usize][j as usize];
+                                        cell.value = new_value;
+                                        cell.formula = None;
+                                        cell.is_formula = false;
+                                        cell.is_error = false;
+                                        next_index += 1;
+                                    }
+                                }
+                                PatternType::Triangular(_last_value, mut next_index) => {
+                                    for j in start_col..=end_col {
+                                        let new_value = triangular(next_index);
+                                        let cell = &mut sheet.cells[start_row as usize][j as usize];
+                                        cell.value = new_value;
+                                        cell.formula = None;
+                                        cell.is_formula = false;
+                                        cell.is_error = false;
+                                        next_index += 1;
+                                    }
+                                }
                                 PatternType::Unknown => {} // Do nothing if no pattern detected
                             }
                         }
                         return;
-                    }
+                 }
                 } else if let Some(cell_arg) = args.strip_suffix(')') {
                     let cell_arg = cell_arg.trim();
                     if let Some((row, col)) = parse_cell_reference(sheet, cell_arg) {
