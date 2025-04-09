@@ -270,6 +270,12 @@ pub fn is_valid_command(sheet: &mut Sheet, command: &str) -> bool {
     if command.starts_with("scroll_to ") {
         return parse_cell_reference(sheet, &command[10..]).is_some();
     }
+    if command.starts_with("GRAPH ") {
+        let parts: Vec<&str> = command.split_whitespace().collect();
+        return parts.len() == 3 && 
+               ["(BAR)", "(SCATTER)"].contains(&parts[1].to_uppercase().as_str()) && 
+               parse_range(sheet, parts[2]).is_some();
+    }
     command.split_once('=').map_or(false, |(ref_str, formula)| {
         parse_cell_reference(sheet, ref_str.trim()).is_some() && 
         !formula.is_empty() && 
