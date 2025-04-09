@@ -141,48 +141,140 @@ pub fn encode_column(col: i32, col_str: &mut String) {
     *col_str = chars.into_iter().collect();
 }
 
-pub fn detect_pattern(sheet: &Sheet, start_row: i32, start_col: i32) -> PatternType {
-    if start_row < 1 {
+pub fn factorial(n: i32) -> i32 {
+    if n <= 1 { 1 } else { n * factorial(n - 1) }
+}
+
+pub fn triangular(n: i32) -> i32 {
+    n * (n + 1) / 2
+}
+
+pub fn is_factorial_sequence(values: &[i32]) -> Option<(i32, i32)> {
+    let forward_values: Vec<i32> = values.iter().rev().copied().collect();
+    if forward_values.is_empty() {
+        return None;
+    }
+
+    // Find the starting n for the first value
+    let first_value = forward_values[0];
+    let mut start_n = 0; // Start from 0! = 1
+    while factorial(start_n) < first_value {
+        start_n += 1;
+    }
+    if factorial(start_n) != first_value {
+        return None; // First value isn’t a factorial
+    }
+
+    // Check if the sequence follows factorials from start_n
+    for (i, &val) in forward_values.iter().enumerate() {
+        let n = start_n + i as i32;
+        if val != factorial(n) {
+            return None;
+        }
+    }
+
+    let last_value = forward_values.last().unwrap();
+    let next_index = start_n + forward_values.len() as i32;
+    Some((*last_value, next_index))
+}
+
+pub fn is_triangular_sequence(values: &[i32]) -> Option<(i32, i32)> {
+    let forward_values: Vec<i32> = values.iter().rev().copied().collect();
+    if forward_values.is_empty() {
+        return None;
+    }
+
+    // Find the starting n for the first value
+    let first_value = forward_values[0];
+    let mut start_n = 1;
+    while triangular(start_n) < first_value {
+        start_n += 1;
+    }
+    if triangular(start_n) != first_value {
+        return None; // First value isn’t a triangular number
+    }
+
+    // Check if the sequence follows triangular numbers from start_n
+    for (i, &val) in forward_values.iter().enumerate() {
+        let n = start_n + i as i32;
+        if val != triangular(n) {
+            return None;
+        }
+    }
+
+    let last_value = forward_values.last().unwrap();
+    let next_index = start_n + forward_values.len() as i32;
+    Some((*last_value, next_index))
+}
+pub fn detect_pattern(sheet: &Sheet, start_row: i32, start_col: i32, end_row: i32, end_col: i32) -> PatternType {
+    let mut values = Vec::new();
+
+    if start_row == end_row { // Horizontal autofill
+        for j in (0.max(start_col - 5)..start_col).rev() {
+            values.push(sheet.cells[start_row as usize][j as usize].value);
+        }
+    } else if start_col == end_col { // Vertical autofill
+        for i in (0.max(start_row - 5)..start_row).rev() {
+            values.push(sheet.cells[i as usize][start_col as usize].value);
+        }
+    } else {
         return PatternType::Unknown;
     }
-    let mut values = Vec::new();
-    for i in (0.max(start_row - 5)..start_row).rev() {
-        values.push(sheet.cells[i as usize][start_col as usize].value);
-    }
+
     if values.is_empty() {
         return PatternType::Unknown;
     }
-    // Check for constant pattern
+
+    println!("Collected values: {:?}", values); // Debug
+
+    // Constant pattern
     if values.len() >= 2 && values.iter().all(|&v| v == values[0]) {
         return PatternType::Constant(values[0]);
     }
-    // Check for arithmetic pattern
+
+    // Arithmetic pattern
     if values.len() >= 2 {
         let diffs: Vec<i32> = values.windows(2).map(|w| w[1] - w[0]).collect();
         if diffs.len() >= 1 && diffs.iter().all(|&d| d == diffs[0]) {
             return PatternType::Arithmetic(values[0], diffs[0]);
         }
     }
-    // Check for Fibonacci pattern (at least 3 values needed)
+
+    // Triangular pattern
+    if values.len() >= 2 {
+        if let Some((last_value, next_index)) = is_triangular_sequence(&values) {
+            return PatternType::Triangular(last_value, next_index);
+        }
+    }
+
+    // Factorial pattern
+    if values.len() >= 2 {
+        if let Some((last_value, next_index)) = is_factorial_sequence(&values) {
+            return PatternType::Factorial(last_value, next_index);
+        }
+    }
+
+    // Fibonacci pattern
     if values.len() >= 3 {
-        let forward_values: Vec<i32> = values.clone().into_iter().rev().collect(); // Reverse to forward order
+        let forward_values: Vec<i32> = values.clone().into_iter().rev().collect();
         let is_fibonacci = forward_values.windows(3).all(|w| w[2] == w[0] + w[1]);
         if is_fibonacci {
             return PatternType::Fibonacci(forward_values[forward_values.len() - 2], forward_values[forward_values.len() - 1]);
         }
     }
+
+    // Geometric pattern
     if values.len() >= 2 {
-        let forward_values: Vec<i32> = values.clone().into_iter().rev().collect(); // Reverse to forward order
+        let forward_values: Vec<i32> = values.clone().into_iter().rev().collect();
         let ratios: Vec<f64> = forward_values.windows(2)
-            .map(|w| {
-                if w[0] == 0 { f64::INFINITY } else { w[1] as f64 / w[0] as f64 }
-            })
+            .map(|w| if w[0] == 0 { f64::INFINITY } else { w[1] as f64 / w[0] as f64 })
             .collect();
         if ratios.len() >= 1 && ratios.iter().all(|&r| (r - ratios[0]).abs() < 1e-10) && ratios[0].is_finite() {
             return PatternType::Geometric(forward_values[0], ratios[0]);
         }
     }
-        PatternType::Constant(values[values.len() - 1])
+
+    PatternType::Unknown
 }
     
     // Default to constant pattern with the last value if no other pattern is detected
