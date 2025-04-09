@@ -251,9 +251,19 @@ pub fn is_valid_command(sheet: &mut Sheet, command: &str) -> bool {
     if command == "disable_output" || command == "enable_output" {
         return true;
     }
-    if sheet.extension_enabled && (command == "undo" || command == "redo" || command.starts_with("FORMULA ")) {
+    if sheet.extension_enabled && (command == "undo" || command == "redo" || 
+    command.starts_with("FORMULA ") || command.starts_with("ROWDEL ") || 
+    command.starts_with("COLDEL ")) {
         if command.starts_with("FORMULA ") {
             return parse_cell_reference(sheet, &command[8..].trim()).is_some();
+        }
+        if command.starts_with("ROWDEL ") {
+            let row_str = &command[7..].trim();
+            return row_str.parse::<i32>().map_or(false, |r| r >= 1 && r <= sheet.rows);
+        }
+        if command.starts_with("COLDEL ") {
+            let col_str = &command[7..].trim();
+            return col_str.chars().all(|c| c.is_ascii_alphabetic());
         }
         return true;
     }
