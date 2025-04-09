@@ -16,7 +16,6 @@ pub enum PatternType {
     Constant(i32),           // All values are the same
     Arithmetic(i32, i32),    // (initial_value, difference)
     Fibonacci(i32, i32),     // (penultimate, last) for Fibonacci sequence
-    Geometric(i32, f64),
     Unknown,                 // No recognized pattern
 }
 
@@ -27,7 +26,6 @@ pub struct Cell {
     pub is_formula: bool,
     pub is_error: bool,
     pub dependencies: Option<Box<CellDependency>>,
-    
     pub dependents: Option<Box<CellDependency>>,
     pub has_circular: bool,
     pub is_bold: bool,
@@ -61,6 +59,9 @@ pub struct Sheet {
     pub output_enabled: bool,
     pub circular_dependency_detected: bool,
     pub extension_enabled: bool,
+    pub command_history: Vec<String>,
+    pub command_position: usize,
+    pub max_history_size: usize,
 }
 
 lazy_static::lazy_static! {
