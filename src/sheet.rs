@@ -91,7 +91,8 @@ pub fn add_to_history(sheet: &mut Sheet, command: &str) {
        command == "redo" ||
        command == "disable_output" || 
        command == "enable_output" ||
-       command.starts_with("scroll_to ") {
+       command.starts_with("scroll_to ") ||
+       command.contains("AUTOFILL") {
         return;
     }
 
