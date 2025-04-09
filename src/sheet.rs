@@ -201,6 +201,21 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
             redo(sheet);
             return;
         }
+
+        if command.starts_with("FORMULA ") {
+            let cell_ref = command[8..].trim();
+            if let Some((row, col)) = parse_cell_reference(sheet, cell_ref) {
+                let cell = &sheet.cells[row as usize][col as usize];
+                if let Some(formula) = &cell.formula {
+                    println!("Formula in cell {}: {}", cell_ref, formula);
+                } else {
+                    println!("No formula stored in cell {}", cell_ref);
+                }
+            } else {
+                println!("Invalid cell reference: {}", cell_ref);
+            }
+            return;
+        }
     }
 
     if command.starts_with("scroll_to ") {
