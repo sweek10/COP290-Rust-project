@@ -35,7 +35,9 @@ pub fn create_sheet(rows: i32, cols: i32, extension_enabled: bool) -> Option<She
         output_enabled: true,
         circular_dependency_detected: false,
         extension_enabled,
-       
+        command_history: Vec::with_capacity(10),
+        command_position: 0,
+        max_history_size: 10,
     })
 }
 pub fn scroll_sheet(sheet: &mut Sheet, direction: char) {
@@ -81,9 +83,86 @@ pub fn scroll_to_cell(sheet: &mut Sheet, cell_ref: &str) {
     }
 }
 
+// Add to sheet.rs
+pub fn add_to_history(sheet: &mut Sheet, command: &str) {
+    // Don't record navigation commands, undo, redo, or display commands
+    if command.len() == 1 && "wasd".contains(command) || 
+       command == "undo" || 
+       command == "redo" ||
+       command == "disable_output" || 
+       command == "enable_output" ||
+       command.starts_with("scroll_to ") {
+        return;
+    }
 
+    // If we're not at the end of the history, truncate it
+    if sheet.command_position < sheet.command_history.len() {
+        sheet.command_history.truncate(sheet.command_position);
+    }
 
-// ... (create_sheet, scroll_sheet, scroll_to_cell unchanged) ...
+    // Add the new command
+    sheet.command_history.push(command.to_string());
+    
+    // Limit history size
+    if sheet.command_history.len() > sheet.max_history_size {
+        sheet.command_history.remove(0);
+    } else {
+        sheet.command_position += 1;
+    }
+}
+
+pub fn undo(sheet: &mut Sheet) -> bool {
+    if sheet.command_position == 0 || sheet.command_history.is_empty() {
+        return false; // Nothing to undo
+    }
+
+    sheet.command_position -= 1;
+    rebuild_sheet_state(sheet);
+    true
+}
+
+pub fn redo(sheet: &mut Sheet) -> bool {
+    if sheet.command_position >= sheet.command_history.len() {
+        return false; // Nothing to redo
+    }
+
+    sheet.command_position += 1;
+    rebuild_sheet_state(sheet);
+    true
+}
+
+fn rebuild_sheet_state(sheet: &mut Sheet) {
+    // Save current view position
+    let view_row = sheet.view_row;
+    let view_col = sheet.view_col;
+    let output_enabled = sheet.output_enabled;
+    
+    // Clear all cells
+    for row in &mut sheet.cells {
+        for cell in row {
+            *cell = Cell::new();
+        }
+    }
+    
+    // Reset circular dependency flag
+    sheet.circular_dependency_detected = false;
+    
+    // Replay commands up to current position
+    let commands_to_replay: Vec<String> = sheet.command_history[0..sheet.command_position].to_vec();
+    
+    for cmd in commands_to_replay {
+        if let Some((cell_ref, formula)) = cmd.split_once('=') {
+            let cell_ref = cell_ref.trim();
+            let formula = formula.trim();
+            update_cell(sheet, cell_ref, formula);
+        }
+    }
+    
+    // Restore view position
+    sheet.view_row = view_row;
+    sheet.view_col = view_col;
+    sheet.output_enabled = output_enabled;
+}
 
 pub fn process_command(sheet: &mut Sheet, command: &str) {
     if command.is_empty() {
@@ -110,6 +189,18 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
         sheet.output_enabled = true;
         return;
     }
+    
+    // Handle undo/redo commands if extension is enabled
+    if sheet.extension_enabled {
+        if command == "undo" {
+            undo(sheet);
+            return;
+        }
+        if command == "redo" {
+            redo(sheet);
+            return;
+        }
+    }
 
     if command.starts_with("scroll_to ") {
         scroll_to_cell(sheet, &command[10..]);
@@ -119,6 +210,12 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
     if let Some((cell_ref, formula)) = command.split_once('=') {
         let cell_ref = cell_ref.trim();
         let formula = formula.trim();
+        
+        // For cell updates, store command in history if extension is enabled
+        if sheet.extension_enabled {
+            add_to_history(sheet, command);
+        }
+
         if (sheet.extension_enabled) {
         if let Some((func_name, args)) = formula.split_once('(') {
             if let Some(range_arg) = args.strip_suffix(')') {
@@ -213,17 +310,6 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                                         cell.is_error = false;
                                         penult = last;
                                         last = new_value;
-                                    }
-                                }
-                                PatternType::Geometric(initial, ratio) => {
-                                    for i in start_row..=end_row {
-                                        let offset = i - start_row;
-                                        let new_value = (initial as f64 * ratio.powi(offset)).round() as i32;
-                                        let cell = &mut sheet.cells[i as usize][start_col as usize];
-                                        cell.value = new_value;
-                                        cell.formula = None;
-                                        cell.is_formula = false;
-                                        cell.is_error = false;
                                     }
                                 }
                                 PatternType::Unknown => {} // Do nothing if no pattern detected
