@@ -2,6 +2,7 @@
 use std::str::FromStr;
 use crate::types::SHEET;
 use crate::types::Sheet;
+use crate::types::PatternType;
 
 pub fn parse_cell_reference(sheet: &mut Sheet,ref_str: &str) -> Option<(i32, i32)> {
     // Trim the reference string to handle any whitespace
@@ -140,53 +141,98 @@ pub fn encode_column(col: i32, col_str: &mut String) {
     *col_str = chars.into_iter().collect();
 }
 
+pub fn detect_pattern(sheet: &Sheet, start_row: i32, start_col: i32) -> PatternType {
+    if start_row < 1 {
+        return PatternType::Unknown;
+    }
+    let mut values = Vec::new();
+    for i in (0.max(start_row - 5)..start_row).rev() {
+        values.push(sheet.cells[i as usize][start_col as usize].value);
+    }
+    if values.is_empty() {
+        return PatternType::Unknown;
+    }
+    // Check for constant pattern
+    if values.len() >= 2 && values.iter().all(|&v| v == values[0]) {
+        return PatternType::Constant(values[0]);
+    }
+    // Check for arithmetic pattern
+    if values.len() >= 2 {
+        let diffs: Vec<i32> = values.windows(2).map(|w| w[1] - w[0]).collect();
+        if diffs.len() >= 1 && diffs.iter().all(|&d| d == diffs[0]) {
+            return PatternType::Arithmetic(values[0], diffs[0]);
+        }
+    }
+    // Check for Fibonacci pattern (at least 3 values needed)
+    if values.len() >= 3 {
+        let forward_values: Vec<i32> = values.clone().into_iter().rev().collect(); // Reverse to forward order
+        let is_fibonacci = forward_values.windows(3).all(|w| w[2] == w[0] + w[1]);
+        if is_fibonacci {
+            return PatternType::Fibonacci(forward_values[forward_values.len() - 2], forward_values[forward_values.len() - 1]);
+        }
+    }
+        PatternType::Constant(values[values.len() - 1])
+}
+    
+    // Default to constant pattern with the last value if no other pattern is detected
 pub fn is_valid_formula(sheet: &mut Sheet, formula: &str) -> bool {
-    // Trim whitespace from the formula
     let formula = formula.trim();
-
-    // Check if it's a function call (e.g., SUM(A1:B2) or SLEEP(2))
+    if (sheet.extension_enabled){
     if let Some((func_name, args)) = formula.split_once('(') {
         if let Some(args) = args.strip_suffix(')') {
             let func_name = func_name.trim().to_uppercase();
-            
-            // Validate all supported functions
             match func_name.as_str() {
                 "SUM" | "AVG" | "MAX" | "MIN" | "STDEV" => {
-                    // These functions require a range argument
                     return parse_range(sheet, args.trim()).is_some();
-                },
-                "SLEEP" => {
-                    // SLEEP accepts either a number or cell reference
-                    let arg = args.trim();
-                    return arg.parse::<i32>().is_ok() || 
-                           parse_cell_reference(sheet, arg).is_some();
-                },
-                _ => {
-                    // Reject unsupported functions
-                    return false;
                 }
+                "SLEEP" => {
+                    return args.parse::<i32>().is_ok() || parse_cell_reference(sheet, args.trim()).is_some();
+                }
+                "BOLD" | "ITALIC" | "UNDERLINE" => {
+                    return parse_cell_reference(sheet, args.trim()).is_some();
+                }
+                "AUTOFILL" => {
+                    return parse_range(sheet, args.trim()).is_some();}
+                _ => return false,
             }
         }
     }
+}
+else { if let Some((func_name, args)) = formula.split_once('(') {
+    if let Some(args) = args.strip_suffix(')') {
+        let func_name = func_name.trim().to_uppercase();
+        match func_name.as_str() {
+            "SUM" | "AVG" | "MAX" | "MIN" | "STDEV" => {
+                return parse_range(sheet, args.trim()).is_some();
+            }
+            "SLEEP" => {
+                return args.parse::<i32>().is_ok() || parse_cell_reference(sheet, args.trim()).is_some();
+            }
+            // "BOLD" | "ITALIC" | "UNDERLINE" => {
+            //     return parse_cell_reference(sheet, args.trim()).is_some();
+            // }
+            // "AUTOFILL" => {
+            //     return parse_range(sheet, args.trim()).is_some();}
+            _ => return false,
+        }
+    }
+}
+}
 
-    // Check for simple arithmetic expressions (e.g., A1+B2)
     if formula.contains('+') || formula.contains('-') || 
        formula.contains('*') || formula.contains('/') {
         let parts: Vec<&str> = formula.split(|c| "+-*/".contains(c))
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
             .collect();
-
         return parts.iter().all(|part| {
-            part.parse::<i32>().is_ok() ||  // Number
-            parse_cell_reference(sheet, part).is_some()  // Cell reference
+            part.parse::<i32>().is_ok() || parse_cell_reference(sheet, part).is_some()
         });
     }
 
-    // Check for plain cell references or numbers
-    parse_cell_reference(sheet, formula).is_some() ||
-    formula.parse::<i32>().is_ok()
+    parse_cell_reference(sheet, formula).is_some() || formula.parse::<i32>().is_ok()
 }
+
 pub fn is_valid_command(sheet: &mut Sheet, command: &str) -> bool {
     if command.len() == 1 && "wasdq".contains(command) {
         return true;
@@ -198,8 +244,8 @@ pub fn is_valid_command(sheet: &mut Sheet, command: &str) -> bool {
         return parse_cell_reference(sheet, &command[10..]).is_some();
     }
     command.split_once('=').map_or(false, |(ref_str, formula)| {
-        parse_cell_reference(sheet, ref_str).is_some() && 
+        parse_cell_reference(sheet, ref_str.trim()).is_some() && 
         !formula.is_empty() && 
-        is_valid_formula(sheet, formula) // Validate the formula too!
+        is_valid_formula(sheet, formula)
     })
 }
