@@ -202,7 +202,7 @@ pub fn is_valid_formula(sheet: &mut Sheet, formula: &str) -> bool {
                 "BOLD" | "ITALIC" | "UNDERLINE" => {
                     return parse_cell_reference(sheet, args.trim()).is_some();
                 }
-                "AUTOFILL" => {
+                "AUTOFILL" | "SORTA" | "SORTD" => {
                     return parse_range(sheet, args.trim()).is_some();}
                 _ => return false,
             }
