@@ -280,6 +280,133 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
         if let Some((func_name, args)) = formula.split_once('(') {
             if let Some(range_arg) = args.strip_suffix(')') {
                 let range_arg = range_arg.trim();
+
+                if func_name.trim().to_uppercase() == "SORTA" || func_name.trim().to_uppercase() == "SORTD" {
+                    if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, range_arg) {
+                        // Check if it's a single column or single row
+                        if start_col == end_col { // Single column
+                            // Collect values from the column
+                            let mut values: Vec<(i32, i32)> = Vec::new();
+                            for i in start_row..=end_row {
+                                values.push((i, sheet.cells[i as usize][start_col as usize].value));
+                            }
+                            
+                            // Sort the values
+                            if func_name.trim().to_uppercase() == "SORTA" {
+                                values.sort_by(|a, b| a.1.cmp(&b.1));
+                            } else {
+                                values.sort_by(|a, b| b.1.cmp(&a.1));
+                            }
+                            
+                            // Create a map of original values for storing
+                            let mut original_values: Vec<(i32, Option<String>, bool, bool, bool, bool, bool)> = Vec::new();
+                            for i in start_row..=end_row {
+                                let cell = &sheet.cells[i as usize][start_col as usize];
+                                original_values.push((
+                                    cell.value,
+                                    cell.formula.clone(),
+                                    cell.is_formula,
+                                    cell.is_error,
+                                    cell.is_bold,
+                                    cell.is_italic,
+                                    cell.is_underline
+                                ));
+                            }
+                            
+                            // Update cells with sorted values
+                            for (idx, (orig_row, value)) in values.iter().enumerate() {
+                                let i = start_row + idx as i32;
+                                let orig_idx = (orig_row - start_row) as usize;
+                                
+                                let cell = &mut sheet.cells[i as usize][start_col as usize];
+                                cell.value = *value;
+                                cell.formula = original_values[orig_idx].1.clone();
+                                cell.is_formula = original_values[orig_idx].2;
+                                cell.is_error = original_values[orig_idx].3;
+                                cell.is_bold = original_values[orig_idx].4;
+                                cell.is_italic = original_values[orig_idx].5;
+                                cell.is_underline = original_values[orig_idx].6;
+                            }
+                        } else if start_row == end_row { // Single row
+                            // Collect values from the row
+                            let mut values: Vec<(i32, i32)> = Vec::new();
+                            for j in start_col..=end_col {
+                                values.push((j, sheet.cells[start_row as usize][j as usize].value));
+                            }
+                            
+                            // Sort the values
+                            if func_name.trim().to_uppercase() == "SORTA" {
+                                values.sort_by(|a, b| a.1.cmp(&b.1));
+                            } else {
+                                values.sort_by(|a, b| b.1.cmp(&a.1));
+                            }
+                            
+                            // Create a map of original values and properties
+                            let mut original_values: Vec<(i32, Option<String>, bool, bool, bool, bool, bool)> = Vec::new();
+                            for j in start_col..=end_col {
+                                let cell = &sheet.cells[start_row as usize][j as usize];
+                                original_values.push((
+                                    cell.value,
+                                    cell.formula.clone(),
+                                    cell.is_formula,
+                                    cell.is_error,
+                                    cell.is_bold,
+                                    cell.is_italic,
+                                    cell.is_underline
+                                ));
+                            }
+                            
+                            // Update cells with sorted values
+                            for (idx, (orig_col, value)) in values.iter().enumerate() {
+                                let j = start_col + idx as i32;
+                                let orig_idx = (orig_col - start_col) as usize;
+                                
+                                let cell = &mut sheet.cells[start_row as usize][j as usize];
+                                cell.value = *value;
+                                cell.formula = original_values[orig_idx].1.clone();
+                                cell.is_formula = original_values[orig_idx].2;
+                                cell.is_error = original_values[orig_idx].3;
+                                cell.is_bold = original_values[orig_idx].4;
+                                cell.is_italic = original_values[orig_idx].5;
+                                cell.is_underline = original_values[orig_idx].6;
+                            }
+                        } else {
+                            // For 2D ranges, we can collect all values, sort them, and reassign
+                            // in row-major or column-major order
+                            let mut all_values: Vec<i32> = Vec::new();
+                            for i in start_row..=end_row {
+                                for j in start_col..=end_col {
+                                    all_values.push(sheet.cells[i as usize][j as usize].value);
+                                }
+                            }
+                            
+                            // Sort all values
+                            if func_name.trim().to_uppercase() == "SORTA" {
+                                all_values.sort();
+                            } else {
+                                all_values.sort_by(|a, b| b.cmp(a));
+                            }
+                            
+                            // Update cells with sorted values (row-major order)
+                            let mut idx = 0;
+                            for i in start_row..=end_row {
+                                for j in start_col..=end_col {
+                                    if idx < all_values.len() {
+                                        let cell = &mut sheet.cells[i as usize][j as usize];
+                                        cell.value = all_values[idx];
+                                        // Clear formula for sorted cells
+                                        cell.formula = None;
+                                        cell.is_formula = false;
+                                        cell.is_error = false;
+                                        idx += 1;
+                                    }
+                                }
+                            }
+                        }
+                        return;
+                    }
+                }
+                
                 if func_name.trim().to_uppercase() == "AUTOFILL" {
                     if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, range_arg) {
                         // Ensure the range is a single column or row for simplicity
