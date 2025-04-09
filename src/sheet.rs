@@ -2,6 +2,7 @@
 use std::io::{self, Write};
 use crate::types::{Sheet, Cell,PatternType};
 use crate::utils::{encode_column, parse_cell_reference, parse_range, detect_pattern};
+use crate::types::GraphType;
 
 use crate::cell::update_cell;
 
