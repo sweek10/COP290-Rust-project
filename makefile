@@ -4,7 +4,7 @@ TARGET := target
 BIN := spreadsheet
 
 # Default target
-all: build
+all: release
 
 # Build the project
 build:
