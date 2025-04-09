@@ -16,6 +16,7 @@ pub enum PatternType {
     Constant(i32),           // All values are the same
     Arithmetic(i32, i32),    // (initial_value, difference)
     Fibonacci(i32, i32),     // (penultimate, last) for Fibonacci sequence
+    Geometric(i32, f64),
     Unknown,                 // No recognized pattern
 }
 

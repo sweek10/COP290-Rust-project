@@ -171,6 +171,17 @@ pub fn detect_pattern(sheet: &Sheet, start_row: i32, start_col: i32) -> PatternT
             return PatternType::Fibonacci(forward_values[forward_values.len() - 2], forward_values[forward_values.len() - 1]);
         }
     }
+    if values.len() >= 2 {
+        let forward_values: Vec<i32> = values.clone().into_iter().rev().collect(); // Reverse to forward order
+        let ratios: Vec<f64> = forward_values.windows(2)
+            .map(|w| {
+                if w[0] == 0 { f64::INFINITY } else { w[1] as f64 / w[0] as f64 }
+            })
+            .collect();
+        if ratios.len() >= 1 && ratios.iter().all(|&r| (r - ratios[0]).abs() < 1e-10) && ratios[0].is_finite() {
+            return PatternType::Geometric(forward_values[0], ratios[0]);
+        }
+    }
         PatternType::Constant(values[values.len() - 1])
 }
     

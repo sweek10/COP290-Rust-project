@@ -215,6 +215,17 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                                         last = new_value;
                                     }
                                 }
+                                PatternType::Geometric(initial, ratio) => {
+                                    for i in start_row..=end_row {
+                                        let offset = i - start_row;
+                                        let new_value = (initial as f64 * ratio.powi(offset)).round() as i32;
+                                        let cell = &mut sheet.cells[i as usize][start_col as usize];
+                                        cell.value = new_value;
+                                        cell.formula = None;
+                                        cell.is_formula = false;
+                                        cell.is_error = false;
+                                    }
+                                }
                                 PatternType::Unknown => {} // Do nothing if no pattern detected
                             }
                         }
