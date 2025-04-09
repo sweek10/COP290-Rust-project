@@ -1,14 +1,14 @@
 // sheet.rs
 use std::io::{self, Write};
-use crate::types::{Sheet, Cell};
-// use crate::types::SHEET;
-use crate::utils::{encode_column, parse_cell_reference};
+use crate::types::{Sheet, Cell,PatternType};
+use crate::utils::{encode_column, parse_cell_reference, parse_range, detect_pattern};
+
 use crate::cell::update_cell;
 
 const DISPLAY_SIZE: i32 = 10;
 const MAX_CELL_REF_LEN: usize = 10;
 
-pub fn create_sheet(rows: i32, cols: i32) -> Option<Sheet> {
+pub fn create_sheet(rows: i32, cols: i32, extension_enabled: bool) -> Option<Sheet> {
     let mut cells = Vec::with_capacity(rows as usize);
     for _ in 0..rows {
         let row: Vec<Cell> = vec![Cell {
@@ -19,6 +19,9 @@ pub fn create_sheet(rows: i32, cols: i32) -> Option<Sheet> {
             dependencies: None,
             dependents: None,
             has_circular: false,
+            is_bold: false,
+            is_italic: false,
+            is_underline:false,
         }; cols as usize];
         cells.push(row);
     }
@@ -31,9 +34,10 @@ pub fn create_sheet(rows: i32, cols: i32) -> Option<Sheet> {
         view_col: 0,
         output_enabled: true,
         circular_dependency_detected: false,
+        extension_enabled,
+       
     })
 }
-
 pub fn scroll_sheet(sheet: &mut Sheet, direction: char) {
     match direction {
         'w' => {
@@ -77,11 +81,14 @@ pub fn scroll_to_cell(sheet: &mut Sheet, cell_ref: &str) {
     }
 }
 
+
+
+// ... (create_sheet, scroll_sheet, scroll_to_cell unchanged) ...
+
 pub fn process_command(sheet: &mut Sheet, command: &str) {
     if command.is_empty() {
         return;
     }
-   
 
     if command.len() == 1 {
         match command.chars().next().unwrap() {
@@ -108,19 +115,142 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
         scroll_to_cell(sheet, &command[10..]);
         return;
     }
-
-     if let Some((cell_ref, formula)) = command.split_once('=') {
+    
+    if let Some((cell_ref, formula)) = command.split_once('=') {
         let cell_ref = cell_ref.trim();
         let formula = formula.trim();
-        // println!("Processing: cell_ref={}, formula={}", cell_ref, formula);
-       
-        update_cell(sheet,cell_ref, formula);
-        // println!("cell is updated");
-    } else {
-        // println!("Invalid command format");
+        if (sheet.extension_enabled) {
+        if let Some((func_name, args)) = formula.split_once('(') {
+            if let Some(range_arg) = args.strip_suffix(')') {
+                let range_arg = range_arg.trim();
+                if func_name.trim().to_uppercase() == "AUTOFILL" {
+                    if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, range_arg) {
+                        // Ensure the range is a single column or row for simplicity
+                        if start_col != end_col && start_row != end_row {
+                            return; // Only support single column or row for now
+                        }
+
+                        if start_col == end_col { // Vertical autofill
+                            let mut values = Vec::new();
+                            for i in (0.max(start_row - 5)..start_row).rev() { // Fixed j to i
+                                values.push(sheet.cells[i as usize][start_col as usize].value);
+                            }
+                            if values.is_empty() {
+                                return;
+                            }
+                            match detect_pattern(sheet, start_row, start_col) {
+                                PatternType::Constant(value) => {
+                                    for i in start_row..=end_row {
+                                        let cell = &mut sheet.cells[i as usize][start_col as usize];
+                                        cell.value = value;
+                                        cell.formula = None;
+                                        cell.is_formula = false;
+                                        cell.is_error = false;
+                                    }
+                                }
+                                PatternType::Arithmetic(_initial, diff) => {
+                                    let last_value = values[0]; // Last known value (A2=2)
+                                    for i in start_row..=end_row {
+                                        let offset = i - (start_row -1); // Offset from the last known cell (A2)
+                                        let new_value = last_value - diff * offset;
+                                        let cell = &mut sheet.cells[i as usize][start_col as usize];
+                                        cell.value = new_value;
+                                        cell.formula = None;
+                                        cell.is_formula = false;
+                                        cell.is_error = false;
+                                    }
+                                }
+                                PatternType::Fibonacci(mut penult, mut last) => {
+                                    for i in start_row..=end_row {
+                                        let new_value = penult + last;
+                                        let cell = &mut sheet.cells[i as usize][start_col as usize];
+                                        cell.value = new_value;
+                                        cell.formula = None;
+                                        cell.is_formula = false;
+                                        cell.is_error = false;
+                                        penult = last;
+                                        last = new_value;
+                                    }
+                                }
+                                PatternType::Unknown => {}
+                            }
+                        }else if start_row == end_row { // Horizontal autofill
+                            let mut values = Vec::new();
+    for j in (0.max(start_col - 5)..start_col).rev() {
+        values.push(sheet.cells[start_row as usize][j as usize].value);
     }
+    if values.is_empty() {
+        return; // No values to work with
+    }
+                            match detect_pattern(sheet, start_row, start_col) {
+                                PatternType::Constant(value) => {
+                                    for j in start_col..=end_col {
+                                        let cell = &mut sheet.cells[start_row as usize][j as usize];
+                                        cell.value = value;
+                                        cell.formula = None;
+                                        cell.is_formula = false;
+                                        cell.is_error = false;
+                                    }
+                                }
+                                PatternType::Arithmetic(initial, diff) => {
+                                    for j in start_col..=end_col {
+                                        let offset = j - (start_col - values.len() as i32);
+                                        let new_value = initial + diff * offset;
+                                        let cell = &mut sheet.cells[start_row as usize][j as usize];
+                                        cell.value = new_value;
+                                        cell.formula = None;
+                                        cell.is_formula = false;
+                                        cell.is_error = false;
+                                    }
+                                }
+                                PatternType::Fibonacci(mut penult, mut last) => {
+                                    for j in start_col..=end_col {
+                                        let new_value = penult + last;
+                                        let cell = &mut sheet.cells[start_row as usize][j as usize];
+                                        cell.value = new_value;
+                                        cell.formula = None;
+                                        cell.is_formula = false;
+                                        cell.is_error = false;
+                                        penult = last;
+                                        last = new_value;
+                                    }
+                                }
+                                PatternType::Unknown => {} // Do nothing if no pattern detected
+                            }
+                        }
+                        return;
+                    }
+                } else if let Some(cell_arg) = args.strip_suffix(')') {
+                    let cell_arg = cell_arg.trim();
+                    if let Some((row, col)) = parse_cell_reference(sheet, cell_arg) {
+                        match func_name.trim().to_uppercase().as_str() {
+                            "BOLD" => {
+                                sheet.cells[row as usize][col as usize].is_bold = true;
+                                return;
+                            }
+                            "ITALIC" => {
+                                sheet.cells[row as usize][col as usize].is_italic = true;
+                                return;
+                            }
+                            "UNDERLINE" => {
+                                sheet.cells[row as usize][col as usize].is_underline = true;
+                                return;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+        update_cell(sheet, cell_ref, formula);
+    
+ 
+ } else {println!{"invalid command format"};}
 }
 
+// ... (display_sheet unchanged) ...
 pub fn display_sheet(sheet: &Sheet) {
     if !sheet.output_enabled {
         return;
@@ -155,15 +285,34 @@ pub fn display_sheet(sheet: &Sheet) {
     println!();
 
     for i in sheet.view_row..(sheet.view_row + DISPLAY_SIZE).min(sheet.rows) {
-        print!("{:4} ", i + 1);
+        print!("{:4} ", i + 1); // Row number
         for j in sheet.view_col..(sheet.view_col + DISPLAY_SIZE).min(sheet.cols) {
             let cell = &sheet.cells[i as usize][j as usize];
             let width = max_widths[(j - sheet.view_col) as usize];
-            if cell.is_error && !cell.has_circular {
-                print!("{:width$} ", "err", width = width);
+            let value_str = if cell.is_error && !cell.has_circular {
+                "err".to_string()
             } else {
-                print!("{:width$} ", cell.value, width = width);
+                cell.value.to_string()
+            };
+
+            // Apply ANSI formatting
+            let mut formatted = String::new();
+            if cell.is_bold {
+                formatted.push_str("\x1b[1m"); // Bold
             }
+            if cell.is_italic {
+                formatted.push_str("\x1b[3m"); // Italic
+            }
+            if cell.is_underline {
+                formatted.push_str("\x1b[4m"); // Underline
+            }
+            formatted.push_str(&value_str);
+            if cell.is_bold || cell.is_italic || cell.is_underline {
+                formatted.push_str("\x1b[0m"); // Reset formatting
+            }
+
+            // Print with proper padding (right-aligned)
+            print!("{:>width$} ", formatted, width = width);
         }
         println!();
     }
