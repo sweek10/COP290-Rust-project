@@ -64,6 +64,14 @@ pub struct Sheet {
     pub max_history_size: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum GraphType {
+    Bar,
+    Scatter,
+    // Add more graph types as needed
+}
+
+
 lazy_static::lazy_static! {
     pub static ref SHEET: Mutex<Option<Sheet>> = Mutex::new(None);
 }
