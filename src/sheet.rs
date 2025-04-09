@@ -731,7 +731,7 @@ pub fn display_graph(sheet: &mut Sheet, graph_type: GraphType, range: &str) {
                     
                     for &cell_value in &values {
                         if cell_value >= value {
-                            print!("{:^width$}", "-", width = column_width);
+                            print!("{:^width$}", "█", width = column_width);
                         } else {
                             print!("{:^width$}", " ", width = column_width);
                         }
