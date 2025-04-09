@@ -266,7 +266,23 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
         scroll_to_cell(sheet, &command[10..]);
         return;
     }
-    
+    if command.starts_with("GRAPH ") {
+        let parts: Vec<&str> = command.split_whitespace().collect();
+        if parts.len() == 3 {
+            let graph_type = match parts[1].to_uppercase().as_str() {
+                "(BAR)" => GraphType::Bar,
+                "(SCATTER)" => GraphType::Scatter,
+                _ => {
+                    println!("Invalid graph type. Use BAR or LINE");
+                    return;
+                }
+            };
+            display_graph(sheet, graph_type, parts[2]);
+        } else {
+            println!("Usage: GRAPH <type> <range> (e.g., GRAPH BAR A1:A10)");
+        }
+        return;
+    }
     if let Some((cell_ref, formula)) = command.split_once('=') {
         let cell_ref = cell_ref.trim();
         let formula = formula.trim();
@@ -601,4 +617,104 @@ pub fn display_sheet(sheet: &Sheet) {
         println!();
     }
     io::stdout().flush().unwrap();
+}
+
+pub fn display_graph(sheet: &mut Sheet, graph_type: GraphType, range: &str) {
+    if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, range) {
+        // Collect values from the range
+        let mut values = Vec::new();
+        let mut labels = Vec::new();
+        
+        for i in start_row..=end_row {
+            for j in start_col..=end_col {
+                let cell = &sheet.cells[i as usize][j as usize];
+                values.push(cell.value);
+                
+                // Create label (e.g., "A1")
+                let mut label = String::new();
+                encode_column(j, &mut label);
+                label.push_str(&(i + 1).to_string());
+                labels.push(label);
+            }
+        }
+        
+        // Find max value for y-axis scale
+        let max_val = *values.iter().filter(|&&v| v > 0).max().unwrap_or(&10);
+        let max_label_width = labels.iter().map(|l| l.len()).max().unwrap_or(2);
+        let column_width = max_label_width.max(3) + 1; // Ensure minimum width of 3 for bars
+
+        match graph_type {
+            GraphType::Bar => {
+                println!("\nBar Graph for range {}:", range);
+                
+                // Print vertical axis and bars
+                for value in (1..=max_val).rev() {
+                    print!("{:2} |", value);
+                    
+                    for &cell_value in &values {
+                        if cell_value >= value {
+                            print!("{:^width$}", "-", width = column_width);
+                        } else {
+                            print!("{:^width$}", " ", width = column_width);
+                        }
+                    }
+                    println!();
+                }
+                
+                // Print bottom separator
+                print!("---+");
+                for _ in &values {
+                    print!("{}", "-".repeat(column_width));
+                }
+                println!();
+                
+                // Print x-axis labels
+                print!("   |");
+                for label in &labels {
+                    print!("{:^width$}", label, width = column_width);
+                }
+                println!("\n");
+            },
+            
+            GraphType::Scatter => {
+                println!("\nScatter Plot for range {}:", range);
+                
+                // Print vertical axis and points
+                for value in (1..=max_val).rev() {
+                    print!("{:2} |", value);
+                    
+                    for &cell_value in &values {
+                        let center = column_width / 2;
+                        
+                        if cell_value == value {
+                            // Print point centered in column
+                            print!("{:width$}", " ", width = center);
+                            print!("*");
+                            print!("{:width$}", " ", width = column_width - center - 1);
+                        } else {
+                            // Empty space
+                            print!("{:^width$}", " ", width = column_width);
+                        }
+                    }
+                    println!();
+                }
+                
+                // Print bottom separator
+                print!("---+");
+                for _ in &values {
+                    print!("{}", "-".repeat(column_width));
+                }
+                println!();
+                
+                // Print x-axis labels
+                print!("   |");
+                for label in &labels {
+                    print!("{:^width$}", label, width = column_width);
+                }
+                println!("\n");
+            }
+        }
+    } else {
+        println!("Invalid range specified for graph");
+    }
 }
