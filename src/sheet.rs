@@ -216,6 +216,50 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
             }
             return;
         }
+
+        if command.starts_with("ROWDEL ") {
+            let row_str = &command[7..].trim();
+            if let Ok(row) = row_str.parse::<i32>() {
+                if row >= 1 && row <= sheet.rows {
+                    // Delete all contents of the row (set to initial state)
+                    for col in 0..sheet.cols {
+                        let cell = &mut sheet.cells[(row-1) as usize][col as usize];
+                        cell.value = 0;
+                        cell.formula = None;
+                        cell.is_formula = false;
+                        cell.is_error = false;
+                        cell.dependencies = None;
+                        cell.is_bold = false;
+                        cell.is_italic = false;
+                        cell.is_underline = false;
+                    }
+                    add_to_history(sheet, command);
+                }
+            }
+            return;
+        }
+        
+        if command.starts_with("COLDEL ") {
+            let col_str = &command[7..].trim();
+            if !col_str.is_empty() && col_str.chars().all(|c| c.is_ascii_alphabetic()) {
+                if let Some((_, col)) = parse_cell_reference(sheet, &format!("{}1", col_str)) {
+                    // Delete all contents of the column (set to initial state)
+                    for row in 0..sheet.rows {
+                        let cell = &mut sheet.cells[row as usize][col as usize];
+                        cell.value = 0;
+                        cell.formula = None;
+                        cell.is_formula = false;
+                        cell.is_error = false;
+                        cell.dependencies = None;
+                        cell.is_bold = false;
+                        cell.is_italic = false;
+                        cell.is_underline = false;
+                    }
+                    add_to_history(sheet, command);
+                }
+            }
+            return;
+        }
     }
 
     if command.starts_with("scroll_to ") {
