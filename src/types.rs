@@ -11,6 +11,13 @@ pub struct CellDependency {
     pub dependency: DependencyType,
     pub next: Option<Box<CellDependency>>,
 }
+#[derive(Debug)]
+pub enum PatternType {
+    Constant(i32),           // All values are the same
+    Arithmetic(i32, i32),    // (initial_value, difference)
+    Fibonacci(i32, i32),     // (penultimate, last) for Fibonacci sequence
+    Unknown,                 // No recognized pattern
+}
 
 #[derive(Clone, Debug)]
 pub struct Cell {
@@ -22,6 +29,26 @@ pub struct Cell {
     
     pub dependents: Option<Box<CellDependency>>,
     pub has_circular: bool,
+    pub is_bold: bool,
+    pub is_italic: bool,
+    pub is_underline: bool,
+}
+impl Cell {
+    // Add a default constructor or update existing creation logic
+    pub fn new() -> Self {
+        Cell {
+            value: 0,
+            formula: None,
+            is_formula: false,
+            is_error: false,
+            dependencies: None,
+            dependents: None,
+            has_circular: false,
+            is_bold: false,
+            is_italic: false,
+            is_underline: false,
+        }
+    }
 }
 
 pub struct Sheet {
@@ -32,6 +59,7 @@ pub struct Sheet {
     pub view_col: i32,
     pub output_enabled: bool,
     pub circular_dependency_detected: bool,
+    pub extension_enabled: bool,
 }
 
 lazy_static::lazy_static! {
