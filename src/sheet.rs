@@ -3,6 +3,7 @@ use std::io::{self, Write};
 use crate::types::{Sheet, Cell,PatternType};
 use crate::utils::{encode_column, parse_cell_reference, parse_range, detect_pattern};
 use crate::types::GraphType;
+use crate::types::{Clipboard, CLIPBOARD};
 
 use crate::cell::update_cell;
 
@@ -267,6 +268,56 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
         scroll_to_cell(sheet, &command[10..]);
         return;
     }
+
+    if command.starts_with("COPY") {
+        let range = if command.starts_with("COPY ") {
+            &command[5..]
+        } else {
+            &command[4..]
+        };
+        if copy_range(sheet, range) {
+            if sheet.output_enabled {
+                println!("Copied to clipboard");
+            }
+        } else {
+            println!("Invalid range for copy");
+        }
+        return;
+    }
+    
+    if command.starts_with("CUT") {
+        let range = if command.starts_with("CUT ") {
+            &command[4..]
+        } else {
+            &command[3..]
+        };
+        if cut_range(sheet, range) {
+            if sheet.output_enabled {
+                println!("Cut to clipboard");
+            }
+        } else {
+            println!("Invalid range for cut");
+        }
+        return;
+    }
+    
+    if command.starts_with("PASTE") {
+        let cell_ref = if command.starts_with("PASTE ") {
+            &command[6..]
+        } else {
+            &command[5..]
+        };
+        if paste_range(sheet, cell_ref) {
+            if sheet.output_enabled {
+                println!("Pasted from clipboard");
+                display_sheet(sheet);
+            }
+        } else {
+            println!("Nothing to paste or invalid target");
+        }
+        return;
+    }
+
     if command.starts_with("GRAPH ") {
         let parts: Vec<&str> = command.split_whitespace().collect();
         if parts.len() == 3 {
@@ -795,4 +846,102 @@ pub fn display_graph(sheet: &mut Sheet, graph_type: GraphType, range: &str) {
     } else {
         println!("Invalid range specified for graph");
     }
+}
+
+impl Sheet {
+    pub fn get_cell_range(&self, start_row: i32, start_col: i32, end_row: i32, end_col: i32) -> Vec<Vec<Cell>> {
+        let mut range = Vec::new();
+        for i in start_row..=end_row {
+            let mut row = Vec::new();
+            for j in start_col..=end_col {
+                row.push(self.cells[i as usize][j as usize].clone());
+            }
+            range.push(row);
+        }
+        range
+    }
+
+    pub fn set_cell_range(&mut self, start_row: i32, start_col: i32, values: &[Vec<Cell>]) {
+        for (i, row) in values.iter().enumerate() {
+            for (j, cell) in row.iter().enumerate() {
+                let target_row = start_row + i as i32;
+                let target_col = start_col + j as i32;
+                if target_row < self.rows && target_col < self.cols {
+                    self.cells[target_row as usize][target_col as usize] = cell.clone();
+                    // Recalculate if it's a formula cell
+                    if let Some(formula) = &cell.formula {
+                        let mut cell_ref = String::new();
+                        encode_column(target_col, &mut cell_ref);
+                        cell_ref.push_str(&(target_row + 1).to_string());
+                        update_cell(self, &cell_ref, formula);
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub fn copy_range(sheet: &mut Sheet, range: &str) -> bool {
+    if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, range) {
+        let contents = sheet.get_cell_range(start_row, start_col, end_row, end_col);
+        *CLIPBOARD.lock().unwrap() = Some(Clipboard {
+            contents,
+            is_cut: false,
+            source_range: None,
+        });
+        true
+    } else {
+        false
+    }
+}
+
+pub fn cut_range(sheet: &mut Sheet, range: &str) -> bool {
+    if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, range) {
+        let contents = sheet.get_cell_range(start_row, start_col, end_row, end_col);
+        
+        // Clear the source cells
+        for i in start_row..=end_row {
+            for j in start_col..=end_col {
+                let cell = &mut sheet.cells[i as usize][j as usize];
+                *cell = Cell::new(); // Reset to empty cell
+            }
+        }
+        
+        *CLIPBOARD.lock().unwrap() = Some(Clipboard {
+            contents,
+            is_cut: true,
+            source_range: Some((start_row, start_col, end_row, end_col)),
+        });
+        true
+    } else {
+        false
+    }
+}
+
+pub fn paste_range(sheet: &mut Sheet, cell_ref: &str) -> bool {
+    // Create a scope for the clipboard lock to ensure it's released before display_sheet
+    let success = {
+        let mut clipboard = CLIPBOARD.lock().unwrap();
+        if let Some(clipboard_data) = &*clipboard {
+            if let Some((start_row, start_col)) = parse_cell_reference(sheet, cell_ref) {
+                sheet.set_cell_range(start_row, start_col, &clipboard_data.contents);
+                
+                // If this was a cut operation, clear the clipboard after paste
+                if clipboard_data.is_cut {
+                    *clipboard = None;
+                }
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }; 
+    
+    if success {
+        display_sheet(sheet);
+    }
+    
+    success
 }
