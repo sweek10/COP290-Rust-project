@@ -71,10 +71,18 @@ pub struct Sheet {
 pub enum GraphType {
     Bar,
     Scatter,
-    // Add more graph types as needed
+   
+}
+
+#[derive(Clone, Debug)]
+pub struct Clipboard {
+    pub contents: Vec<Vec<Cell>>,
+    pub is_cut: bool,
+    pub source_range: Option<(i32, i32, i32, i32)>,
 }
 
 
 lazy_static::lazy_static! {
     pub static ref SHEET: Mutex<Option<Sheet>> = Mutex::new(None);
+    pub static ref CLIPBOARD: Mutex<Option<Clipboard>> = Mutex::new(None);
 }
