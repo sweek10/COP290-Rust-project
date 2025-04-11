@@ -368,6 +368,36 @@ pub fn is_valid_command(sheet: &mut Sheet, command: &str) -> bool {
                ["(BAR)", "(SCATTER)"].contains(&parts[1].to_uppercase().as_str()) && 
                parse_range(sheet, parts[2]).is_some();
     }
+
+    if command.starts_with("COPY") {
+        let range = if command.starts_with("COPY ") {
+            &command[5..]
+        } else {
+            &command[4..]
+        };
+        return parse_range(sheet, range).is_some();
+    }
+    
+
+    if command.starts_with("CUT") {
+        let range = if command.starts_with("CUT ") {
+            &command[4..]
+        } else {
+            &command[3..]
+        };
+        return parse_range(sheet, range).is_some();
+    }
+    
+
+    if command.starts_with("PASTE") {
+        let cell_ref = if command.starts_with("PASTE ") {
+            &command[6..]
+        } else {
+            &command[5..]
+        };
+        return parse_cell_reference(sheet, cell_ref).is_some();
+    }
+    
     command.split_once('=').map_or(false, |(ref_str, formula)| {
         parse_cell_reference(sheet, ref_str.trim()).is_some() && 
         !formula.is_empty() && 
