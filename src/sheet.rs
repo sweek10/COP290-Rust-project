@@ -9,7 +9,7 @@ use crate::utils::triangular;
 use crate::cell::update_cell;
 
 const DISPLAY_SIZE: i32 = 10;
-const MAX_CELL_REF_LEN: usize = 10;
+// const MAX_CELL_REF_LEN: usize = 10;
 
 pub fn create_sheet(rows: i32, cols: i32, extension_enabled: bool) -> Option<Sheet> {
     let mut cells = Vec::with_capacity(rows as usize);
@@ -345,7 +345,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
             add_to_history(sheet, command);
         }
 
-        if (sheet.extension_enabled) {
+        if sheet.extension_enabled {
         if let Some((func_name, args)) = formula.split_once('(') {
             if let Some(range_arg) = args.strip_suffix(')') {
                 let range_arg = range_arg.trim();
@@ -587,7 +587,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                                         cell.is_error = false;
                                     }
                                 }
-                                PatternType::Arithmetic(initial, diff) => {
+                                PatternType::Arithmetic(_, diff) => {
                                     let last_value = values[0]; 
                                     for j in start_col..=end_col {
                                         let offset = j - (start_col-1);
@@ -611,7 +611,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                                         last = new_value;
                                     }
                                 }
-                                PatternType::Geometric(initial, ratio) => {
+                                PatternType::Geometric(_, ratio) => {
                                     let last_value = values[0];
                                     for j in start_col..=end_col { // Fix: Use j instead of i
                                         let offset = j - (start_col - 1);

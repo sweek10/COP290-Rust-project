@@ -1,6 +1,5 @@
 // utils.rs
 use std::str::FromStr;
-use crate::types::SHEET;
 use crate::types::Sheet;
 use crate::types::PatternType;
 
@@ -280,7 +279,7 @@ pub fn detect_pattern(sheet: &Sheet, start_row: i32, start_col: i32, end_row: i3
     // Default to constant pattern with the last value if no other pattern is detected
 pub fn is_valid_formula(sheet: &mut Sheet, formula: &str) -> bool {
     let formula = formula.trim();
-    if (sheet.extension_enabled){
+    if sheet.extension_enabled{
     if let Some((func_name, args)) = formula.split_once('(') {
         if let Some(args) = args.strip_suffix(')') {
             let func_name = func_name.trim().to_uppercase();
