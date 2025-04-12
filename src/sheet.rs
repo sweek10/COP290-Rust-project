@@ -263,12 +263,9 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
             }
             return;
         }
-    }
+    
 
-    if command.starts_with("scroll_to ") {
-        scroll_to_cell(sheet, &command[10..]);
-        return;
-    }
+    
 
     if command.starts_with("COPY") {
         let range = if command.starts_with("COPY ") {
@@ -336,6 +333,11 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
         }
         return;
     }
+}
+if command.starts_with("scroll_to ") {
+    scroll_to_cell(sheet, &command[10..]);
+    return;
+}
     if let Some((cell_ref, formula)) = command.split_once('=') {
         let cell_ref = cell_ref.trim();
         let formula = formula.trim();
