@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 lazy_static = "1.4.0"
+calamine = "0.19.1"     # For reading data from an excel file
 
 # Optional: Add these if you want better error handling and string manipulation
 anyhow = "1.0"    # For easier error handling
