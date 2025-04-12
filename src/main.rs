@@ -12,6 +12,7 @@ use crate::sheet::{create_sheet, process_command, display_sheet};
 use crate::utils::is_valid_command;
 use std::fs::File;
 use std::path::Path;
+use calamine::{Reader, open_workbook, Xlsx, Range, DataType};
 
 const MAX_ROWS: i32 = 999;
 const MAX_COLS: i32 = 18278;
@@ -71,11 +72,93 @@ fn load_csv_file(sheet: &mut crate::types::Sheet, filename: &str) -> Result<(), 
     Ok(())
 }
 
+fn load_excel_file(sheet: &mut crate::types::Sheet, filename: &str) -> Result<(), String> {
+    // Open the workbook
+    let mut workbook: Xlsx<_> = open_workbook(filename)
+        .map_err(|e| format!("Failed to open Excel file: {}", e))?;
+    
+    // Get the first worksheet (we'll only read the first sheet)
+    let sheet_names = workbook.sheet_names().to_vec();
+    if sheet_names.is_empty() {
+        return Err("Excel file doesn't contain any worksheets".to_string());
+    }
+    
+    let worksheet = workbook.worksheet_range(&sheet_names[0])
+        .ok_or_else(|| "Failed to get first worksheet".to_string())?
+        .map_err(|e| format!("Error accessing worksheet: {}", e))?;
+    
+    // Process each cell in the worksheet
+    let height = worksheet.height() as i32;
+    let width = worksheet.width() as i32;
+    
+    if height > sheet.rows {
+        return Err(format!("Excel file has more rows than the spreadsheet (file: {}, max: {})", 
+                          height, sheet.rows));
+    }
+    
+    if width > sheet.cols {
+        return Err(format!("Excel file has more columns than the spreadsheet (file: {}, max: {})", 
+                          width, sheet.cols));
+    }
+    
+    for row_idx in 0..height {
+        for col_idx in 0..width {
+            match worksheet.get_value(((row_idx as usize).try_into().unwrap(), (col_idx as usize).try_into().unwrap())) {
+                Some(DataType::Int(value)) => {
+                    sheet.cells[row_idx as usize][col_idx as usize].value = *value as i32;
+                },
+                Some(DataType::Float(value)) => {
+                    // Since our spreadsheet only supports integers, we'll round floats
+                    sheet.cells[row_idx as usize][col_idx as usize].value = *value as i32;
+                },
+                Some(DataType::String(value)) => {
+                    if value.starts_with('=') {
+                        // It's a formula
+                        let formula = &value[1..]; // Remove the = prefix
+                        
+                        // Create cell reference string for this cell
+                        let mut cell_ref = String::new();
+                        crate::utils::encode_column(col_idx, &mut cell_ref);
+                        cell_ref.push_str(&(row_idx + 1).to_string());
+                        
+                        // Apply the formula to the cell
+                        crate::cell::update_cell(sheet, &cell_ref, formula);
+                    } else {
+                        // For non-formula strings, store as value 0
+                        sheet.cells[row_idx as usize][col_idx as usize].value = 0;
+                    }
+                },
+                Some(DataType::Bool(value)) => {
+                    // Convert boolean to 1 (true) or 0 (false)
+                    sheet.cells[row_idx as usize][col_idx as usize].value = if *value { 1 } else { 0 };
+                },
+                Some(DataType::DateTime(_)) => {
+                    // For date/time values, store as 0 (could be enhanced in the future)
+                    sheet.cells[row_idx as usize][col_idx as usize].value = 0;
+                },
+                Some(DataType::Error(_)) => {
+                    // For error values, store as 0
+                    sheet.cells[row_idx as usize][col_idx as usize].value = 0;
+                },
+                None => {
+                    // Empty cell, do nothing
+                }
+                _ => {
+                    // Other types, set to 0
+                    sheet.cells[row_idx as usize][col_idx as usize].value = 0;
+                }
+            }
+        }
+    }
+    
+    Ok(())
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut extension_enabled = false;
     let mut row_col_args = Vec::new();
-    let mut csv_file = None;
+    let mut input_file = None;
 
     // Parse command-line arguments
     let mut i = 1;
@@ -89,18 +172,18 @@ fn main() {
         }
     }
 
-    // Check if the last argument is a CSV file (when using extension mode)
+    // Check if the last argument is a data file (when using extension mode)
     if extension_enabled && row_col_args.len() == 3 {
-        let potential_csv = &row_col_args[2];
-        if Path::new(potential_csv).extension().and_then(|ext| ext.to_str()) == Some("csv") {
-            csv_file = Some(potential_csv.clone());
-            row_col_args.pop(); // Remove the CSV filename from row_col_args
+        let potential_file = &row_col_args[2];
+        if Path::new(potential_file).exists() {
+            input_file = Some(potential_file.clone());
+            row_col_args.pop(); // Remove the filename from row_col_args
         }
     }
 
     if row_col_args.len() != 2 {
-        println!("Usage: {} [--extension] <rows> <columns> [csv_file]", args[0]);
-        println!("Note: CSV file loading is only available with --extension flag");
+        println!("Usage: {} [--extension] <rows> <columns> [input_file.csv|xlsx]", args[0]);
+        println!("Note: File loading is only available with --extension flag");
         return;
     }
 
@@ -115,15 +198,29 @@ fn main() {
     let mut sheet_guard = SHEET.lock().unwrap();
     *sheet_guard = create_sheet(rows, cols, extension_enabled);
     
-    // If a CSV file was specified and extension is enabled, load it
-    if extension_enabled {if let Some(csv_filename) = csv_file {
-        if let Some(ref mut sheet) = *sheet_guard {
-            match load_csv_file(sheet, &csv_filename) {
-                Ok(_) => println!("Successfully loaded CSV file: {}", csv_filename),
-                Err(e) => println!("Error loading CSV file: {}", e)
+    // If an input file was specified and extension is enabled, load it
+    if extension_enabled {
+        if let Some(filename) = input_file {
+            if let Some(ref mut sheet) = *sheet_guard {
+                // Check file extension to determine how to load it
+                let extension = Path::new(&filename)
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .unwrap_or("");
+                
+                let result = match extension.to_lowercase().as_str() {
+                    "csv" => load_csv_file(sheet, &filename),
+                    "xlsx" => load_excel_file(sheet, &filename),
+                    _ => Err(format!("Unsupported file format: {}", extension))
+                };
+                
+                match result {
+                    Ok(_) => println!("Successfully loaded file: {}", filename),
+                    Err(e) => println!("Error loading file: {}", e)
+                }
             }
         }
-    }}
+    }
     
     drop(sheet_guard);
 
