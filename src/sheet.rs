@@ -4,7 +4,8 @@ use crate::types::{Sheet, Cell,PatternType};
 use crate::utils::{encode_column, parse_cell_reference, parse_range, detect_pattern};
 use crate::types::GraphType;
 use crate::types::{Clipboard, CLIPBOARD};
-
+use crate::utils::factorial;
+use crate::utils::triangular;
 use crate::cell::update_cell;
 
 const DISPLAY_SIZE: i32 = 10;
