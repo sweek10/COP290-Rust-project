@@ -361,14 +361,14 @@ pub fn is_valid_command(sheet: &mut Sheet, command: &str) -> bool {
     if command.starts_with("scroll_to ") {
         return parse_cell_reference(sheet, &command[10..]).is_some();
     }
-    if command.starts_with("GRAPH ") {
+    if sheet.extension_enabled && command.starts_with("GRAPH ") {
         let parts: Vec<&str> = command.split_whitespace().collect();
         return parts.len() == 3 && 
                ["(BAR)", "(SCATTER)"].contains(&parts[1].to_uppercase().as_str()) && 
                parse_range(sheet, parts[2]).is_some();
     }
 
-    if command.starts_with("COPY") {
+    if sheet.extension_enabled && command.starts_with("COPY") {
         let range = if command.starts_with("COPY ") {
             &command[5..]
         } else {
@@ -378,7 +378,7 @@ pub fn is_valid_command(sheet: &mut Sheet, command: &str) -> bool {
     }
     
 
-    if command.starts_with("CUT") {
+    if sheet.extension_enabled && command.starts_with("CUT") {
         let range = if command.starts_with("CUT ") {
             &command[4..]
         } else {
@@ -388,7 +388,7 @@ pub fn is_valid_command(sheet: &mut Sheet, command: &str) -> bool {
     }
     
 
-    if command.starts_with("PASTE") {
+    if sheet.extension_enabled && command.starts_with("PASTE") {
         let cell_ref = if command.starts_with("PASTE ") {
             &command[6..]
         } else {
