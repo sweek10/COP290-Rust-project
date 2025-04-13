@@ -238,7 +238,7 @@ fn main() {
 
         print!("[{:.1}] {}> ", elapsed_time, if is_valid {
             if SHEET.lock().unwrap().as_ref().unwrap().circular_dependency_detected { "(err)" } else { "(ok)" }
-        } else { "(unrecognized cmd)" });
+        } else { "(err)" });
         io::stdout().flush().unwrap();
 
         let mut command = String::new();
