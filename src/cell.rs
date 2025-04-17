@@ -1,42 +1,38 @@
 use std::thread::sleep;
 use std::time::Duration;
 use crate::types::{Sheet, DependencyType};
-use crate::dependencies::{has_circular_dependency, add_dependency, remove_dependency, clear_dependencies, recalculate_dependents};
+use crate::dependencies::{has_circular_dependency, remove_dependency, clear_dependencies, recalculate_dependents};
 use crate::utils::{parse_cell_reference, parse_range, calculate_range_function, evaluate_arithmetic, is_valid_formula};
 
 pub fn update_cell(sheet: &mut Sheet, cell_ref: &str, formula: &str) {
     if parse_cell_reference(sheet, cell_ref).is_none() || !is_valid_formula(sheet, formula) {
-        return; // Reject invalid updates completely
+        return;
     }
 
     if let Some((row, col)) = parse_cell_reference(sheet, cell_ref) {
-        // Phase 1: Remove existing dependencies
         let mut to_remove = Vec::new();
         {
             let cell = &sheet.cells[row as usize][col as usize];
-            let mut dep = cell.dependencies.as_ref();
-            while let Some(d) = dep {
-                match d.dependency {
-                    DependencyType::Single { row: r, col: c } => to_remove.push((r, c)),
+            for dep in &cell.dependencies {
+                match dep {
+                    DependencyType::Single { row: r, col: c } => to_remove.push((*r, *c)),
                     DependencyType::Range { start_row, start_col, end_row, end_col } => {
-                        for i in start_row..=end_row {
-                            for j in start_col..=end_col {
+                        for i in *start_row..=*end_row {
+                            for j in *start_col..=*end_col {
                                 to_remove.push((i, j));
                             }
                         }
                     }
                 }
-                dep = d.next.as_ref();
             }
         }
+        
         for (dep_row, dep_col) in to_remove {
-            let mut dependents = sheet.cells[dep_row as usize][dep_col as usize].dependents.take();
-            remove_dependency(&mut dependents, row, col);
-            sheet.cells[dep_row as usize][dep_col as usize].dependents = dependents;
+            remove_dependency(&mut sheet.cells[dep_row as usize][dep_col as usize].dependents, row, col);
         }
+        
         clear_dependencies(&mut sheet.cells[row as usize][col as usize].dependencies);
 
-        // Phase 2: Check for circular dependencies
         if has_circular_dependency(sheet, cell_ref, formula) {
             let cell = &mut sheet.cells[row as usize][col as usize];
             cell.formula = Some(formula.to_string());
@@ -45,13 +41,12 @@ pub fn update_cell(sheet: &mut Sheet, cell_ref: &str, formula: &str) {
             return;
         }
 
-        // Phase 3: Collect new dependencies (no individual cell updates for ranges)
-        let mut new_dependencies = None;
+        let mut new_dependencies = Vec::new();
         let tokens: Vec<&str> = formula.split(&['+', '-', '*', '/', '(', ')', ' '][..]).collect();
         for token in tokens {
             if token.contains(':') {
                 if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, token) {
-                    add_dependency(&mut new_dependencies, DependencyType::Range {
+                    new_dependencies.push(DependencyType::Range {
                         start_row,
                         start_col,
                         end_row,
@@ -60,15 +55,14 @@ pub fn update_cell(sheet: &mut Sheet, cell_ref: &str, formula: &str) {
                 }
             } else if token.chars().next().map_or(false, |c| c.is_alphabetic()) {
                 if let Some((dep_row, dep_col)) = parse_cell_reference(sheet, token) {
-                    add_dependency(&mut new_dependencies, DependencyType::Single { row: dep_row, col: dep_col });
-                    let mut dependents = sheet.cells[dep_row as usize][dep_col as usize].dependents.take();
-                    add_dependency(&mut dependents, DependencyType::Single { row, col });
-                    sheet.cells[dep_row as usize][dep_col as usize].dependents = dependents;
+                    new_dependencies.push(DependencyType::Single { row: dep_row, col: dep_col });
+                    sheet.cells[dep_row as usize][dep_col as usize].dependents.push(
+                        DependencyType::Single { row, col }
+                    );
                 }
             }
         }
 
-        // Phase 4: Update cell with new dependencies and formula
         {
             let cell = &mut sheet.cells[row as usize][col as usize];
             cell.formula = Some(formula.to_string());
@@ -76,7 +70,6 @@ pub fn update_cell(sheet: &mut Sheet, cell_ref: &str, formula: &str) {
             cell.dependencies = new_dependencies;
         }
 
-        // Phase 5: Evaluate and update cell value
         let (value, is_error) = evaluate_expression(sheet, formula, cell_ref);
         {
             let cell = &mut sheet.cells[row as usize][col as usize];
@@ -84,7 +77,6 @@ pub fn update_cell(sheet: &mut Sheet, cell_ref: &str, formula: &str) {
             cell.is_error = is_error;
         }
 
-        // Phase 6: Recalculate dependents and reset circular flag
         recalculate_dependents(sheet, cell_ref);
         crate::dependencies::reset_circular_dependency_flag(sheet);
     }
@@ -105,6 +97,7 @@ pub fn evaluate_expression(sheet: &mut Sheet, expr: &str, _current_cell: &str) -
     }
 
     if let Some((function, args)) = expr.split_once('(').map(|(f, a)| (f, &a[..a.len()-1])) {
+        let function = function.trim().to_uppercase();
         if function == "SLEEP" {
             let (duration, error) = evaluate_expression(sheet, args, _current_cell);
             if error {
@@ -114,31 +107,15 @@ pub fn evaluate_expression(sheet: &mut Sheet, expr: &str, _current_cell: &str) -
             return (duration, false);
         }
         
-        if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, args) {
-            let mut max = i32::MIN;
-            let mut sum = 0;
-            let mut has_error = false;
-            for i in start_row..=end_row {
-                for j in start_col..=end_col {
-                    let cell = &sheet.cells[i as usize][j as usize];
-                    if cell.is_error {
-                        has_error = true;
-                        break;
+        if parse_range(sheet, args).is_some() {
+            match calculate_range_function(sheet, &function, args) {
+                Ok(result) => {
+                    if result.is_nan() || result.is_infinite() {
+                        return (0, true);
                     }
-                    max = max.max(cell.value);
-                    sum += cell.value;
+                    return (result as i32, false);
                 }
-                if has_error {
-                    break;
-                }
-            }
-            if has_error {
-                return (0, true);
-            }
-            match function {
-                "MAX" => return (max, false),
-                "SUM" => return (sum, false),
-                _ => return (calculate_range_function(sheet, function, args) as i32, false),
+                Err(()) => return (0, true), 
             }
         }
     }
