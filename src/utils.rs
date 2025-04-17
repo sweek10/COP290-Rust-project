@@ -1,48 +1,29 @@
-// utils.rs
 use std::str::FromStr;
-use crate::types::Sheet;
-use crate::types::PatternType;
+use crate::types::{Sheet, PatternType};
 
-pub fn parse_cell_reference(sheet: &mut Sheet,ref_str: &str) -> Option<(i32, i32)> {
-    // Trim the reference string to handle any whitespace
-    // println!("Parsing cell reference: '{}'", ref_str);
+pub fn parse_cell_reference(sheet: &mut Sheet, ref_str: &str) -> Option<(i32, i32)> {
     let ref_str = ref_str.trim();
-    
-    // Find the position where digits start
     let num_start = ref_str.chars().position(|c| c.is_ascii_digit())?;
-    // println!("num_start: {}", num_start);
-    
-    // Split into column letters and row number
     let (col_str, row_str) = ref_str.split_at(num_start);
-    // println!("col_str: '{}', row_str: '{}'", col_str, row_str);
     
-    // Ensure the column string is not empty
     if col_str.is_empty() {
         return None;
     }
     
-    // Convert column letters to column index
     let col = decode_column(col_str);
-    // println!("col: {}", col);
-    
-    // Parse row number, subtracting 1 to convert to 0-indexed
     let row = i32::from_str(row_str).ok()? - 1;
-    // println!("row: {}", row);
     
-    // let sheet = SHEET.lock().unwrap();
-    // let sheet = sheet.as_ref().unwrap();
-    
-    // Check if the cell is within bounds
     if row >= 0 && row < sheet.rows && col >= 0 && col < sheet.cols {
         Some((row, col))
     } else {
         None
     }
 }
-pub fn parse_range(sheet:&mut Sheet,range: &str) -> Option<(i32, i32, i32, i32)> {
+
+pub fn parse_range(sheet: &mut Sheet, range: &str) -> Option<(i32, i32, i32, i32)> {
     let (start, end) = range.split_once(':')?;
-    let (start_row, start_col) = parse_cell_reference(sheet,start)?;
-    let (end_row, end_col) = parse_cell_reference(sheet,end)?;
+    let (start_row, start_col) = parse_cell_reference(sheet, start)?;
+    let (end_row, end_col) = parse_cell_reference(sheet, end)?;
     if start_row <= end_row && start_col <= end_col {
         Some((start_row, start_col, end_row, end_col))
     } else {
@@ -50,45 +31,54 @@ pub fn parse_range(sheet:&mut Sheet,range: &str) -> Option<(i32, i32, i32, i32)>
     }
 }
 
-pub fn calculate_range_function(sheet:&mut Sheet,function: &str, range: &str) -> f64 {
-    let (start_row, start_col, end_row, end_col) = parse_range(sheet,range).unwrap_or((0, 0, 0, 0));
-    // let sheet = SHEET.lock().unwrap();
-    // let sheet = sheet.as_ref().unwrap();
-    
+pub fn calculate_range_function(sheet: &mut Sheet, function: &str, range: &str) -> Result<f64, ()> {
+    let (start_row, start_col, end_row, end_col) = match parse_range(sheet, range) {
+        Some(range) => range,
+        None => return Err(()),
+    };
+
     let mut count = 0;
     let mut sum = 0.0;
-    let mut min = i32::MAX as f64;
-    let mut max = i32::MIN as f64;
-    
+    let mut min = f64::MAX;
+    let mut max = f64::MIN;
+    let mut sum_squares = 0.0;
+
+    // Single pass: check for errors and compute statistics
     for i in start_row..=end_row {
         for j in start_col..=end_col {
-            let value = sheet.cells[i as usize][j as usize].value as f64;
+            let cell = &sheet.cells[i as usize][j as usize];
+            if cell.is_error {
+                return Err(()); // Any error in the range causes the function to return an error
+            }
+            let value = cell.value as f64;
             sum += value;
             min = min.min(value);
             max = max.max(value);
+            sum_squares += value * value;
             count += 1;
         }
     }
-    
-    if count == 0 { return 0.0; }
+
+    if count == 0 {
+        return Err(()); // Empty range is considered an error
+    }
+
     let mean = sum / count as f64;
-    
-    match function {
+
+    match function.to_uppercase().as_str() {
         "STDEV" => {
-            let variance: f64 = (start_row..=end_row)
-                .flat_map(|i| (start_col..=end_col).map(move |j| i as usize * j as usize))
-                .map(|idx| {
-                    let diff = sheet.cells[idx / (end_col - start_col + 1) as usize][idx % (end_col - start_col + 1) as usize].value as f64 - mean;
-                    diff * diff
-                })
-                .sum();
-            (variance / count as f64).sqrt()
+            let variance = (sum_squares / count as f64) - (mean * mean);
+            if variance <= 0.0 {
+                Ok(0.0)
+            } else {
+                Ok(variance.sqrt())
+            }
         }
-        "MIN" => min,
-        "MAX" => max,
-        "SUM" => sum,
-        "AVG" => mean,
-        _ => 0.0,
+        "MIN" => Ok(min),
+        "MAX" => Ok(max),
+        "SUM" => Ok(sum),
+        "AVG" => Ok(mean),
+        _ => Err(()),
     }
 }
 
@@ -154,17 +144,15 @@ pub fn is_factorial_sequence(values: &[i32]) -> Option<(i32, i32)> {
         return None;
     }
 
-    // Find the starting n for the first value
     let first_value = forward_values[0];
-    let mut start_n = 0; // Start from 0! = 1
+    let mut start_n = 0;
     while factorial(start_n) < first_value {
         start_n += 1;
     }
     if factorial(start_n) != first_value {
-        return None; // First value isn’t a factorial
+        return None;
     }
 
-    // Check if the sequence follows factorials from start_n
     for (i, &val) in forward_values.iter().enumerate() {
         let n = start_n + i as i32;
         if val != factorial(n) {
@@ -183,17 +171,15 @@ pub fn is_triangular_sequence(values: &[i32]) -> Option<(i32, i32)> {
         return None;
     }
 
-    // Find the starting n for the first value
     let first_value = forward_values[0];
     let mut start_n = 1;
     while triangular(start_n) < first_value {
         start_n += 1;
     }
     if triangular(start_n) != first_value {
-        return None; // First value isn’t a triangular number
+        return None;
     }
 
-    // Check if the sequence follows triangular numbers from start_n
     for (i, &val) in forward_values.iter().enumerate() {
         let n = start_n + i as i32;
         if val != triangular(n) {
@@ -205,14 +191,15 @@ pub fn is_triangular_sequence(values: &[i32]) -> Option<(i32, i32)> {
     let next_index = start_n + forward_values.len() as i32;
     Some((*last_value, next_index))
 }
+
 pub fn detect_pattern(sheet: &Sheet, start_row: i32, start_col: i32, end_row: i32, end_col: i32) -> PatternType {
     let mut values = Vec::new();
 
-    if start_row == end_row { // Horizontal autofill
+    if start_row == end_row {
         for j in (0.max(start_col - 5)..start_col).rev() {
             values.push(sheet.cells[start_row as usize][j as usize].value);
         }
-    } else if start_col == end_col { // Vertical autofill
+    } else if start_col == end_col {
         for i in (0.max(start_row - 5)..start_row).rev() {
             values.push(sheet.cells[i as usize][start_col as usize].value);
         }
@@ -224,14 +211,10 @@ pub fn detect_pattern(sheet: &Sheet, start_row: i32, start_col: i32, end_row: i3
         return PatternType::Unknown;
     }
 
-    println!("Collected values: {:?}", values); // Debug
-
-    // Constant pattern
     if values.len() >= 2 && values.iter().all(|&v| v == values[0]) {
         return PatternType::Constant(values[0]);
     }
 
-    // Arithmetic pattern
     if values.len() >= 2 {
         let diffs: Vec<i32> = values.windows(2).map(|w| w[1] - w[0]).collect();
         if diffs.len() >= 1 && diffs.iter().all(|&d| d == diffs[0]) {
@@ -239,21 +222,18 @@ pub fn detect_pattern(sheet: &Sheet, start_row: i32, start_col: i32, end_row: i3
         }
     }
 
-    // Triangular pattern
     if values.len() >= 2 {
         if let Some((last_value, next_index)) = is_triangular_sequence(&values) {
             return PatternType::Triangular(last_value, next_index);
         }
     }
 
-    // Factorial pattern
     if values.len() >= 2 {
         if let Some((last_value, next_index)) = is_factorial_sequence(&values) {
             return PatternType::Factorial(last_value, next_index);
         }
     }
 
-    // Fibonacci pattern
     if values.len() >= 3 {
         let forward_values: Vec<i32> = values.clone().into_iter().rev().collect();
         let is_fibonacci = forward_values.windows(3).all(|w| w[2] == w[0] + w[1]);
@@ -262,7 +242,6 @@ pub fn detect_pattern(sheet: &Sheet, start_row: i32, start_col: i32, end_row: i3
         }
     }
 
-    // Geometric pattern
     if values.len() >= 2 {
         let forward_values: Vec<i32> = values.clone().into_iter().rev().collect();
         let ratios: Vec<f64> = forward_values.windows(2)
@@ -275,51 +254,46 @@ pub fn detect_pattern(sheet: &Sheet, start_row: i32, start_col: i32, end_row: i3
 
     PatternType::Unknown
 }
-    
-    // Default to constant pattern with the last value if no other pattern is detected
+
 pub fn is_valid_formula(sheet: &mut Sheet, formula: &str) -> bool {
     let formula = formula.trim();
-    if sheet.extension_enabled{
-    if let Some((func_name, args)) = formula.split_once('(') {
-        if let Some(args) = args.strip_suffix(')') {
-            let func_name = func_name.trim().to_uppercase();
-            match func_name.as_str() {
-                "SUM" | "AVG" | "MAX" | "MIN" | "STDEV" => {
-                    return parse_range(sheet, args.trim()).is_some();
+    if sheet.extension_enabled {
+        if let Some((func_name, args)) = formula.split_once('(') {
+            if let Some(args) = args.strip_suffix(')') {
+                let func_name = func_name.trim().to_uppercase();
+                match func_name.as_str() {
+                    "SUM" | "AVG" | "MAX" | "MIN" | "STDEV" => {
+                        return parse_range(sheet, args.trim()).is_some();
+                    }
+                    "SLEEP" => {
+                        return args.parse::<i32>().is_ok() || parse_cell_reference(sheet, args.trim()).is_some();
+                    }
+                    "BOLD" | "ITALIC" | "UNDERLINE" => {
+                        return parse_cell_reference(sheet, args.trim()).is_some();
+                    }
+                    "AUTOFILL" | "SORTA" | "SORTD" => {
+                        return parse_range(sheet, args.trim()).is_some();
+                    }
+                    _ => return false,
                 }
-                "SLEEP" => {
-                    return args.parse::<i32>().is_ok() || parse_cell_reference(sheet, args.trim()).is_some();
+            }
+        }
+    } else {
+        if let Some((func_name, args)) = formula.split_once('(') {
+            if let Some(args) = args.strip_suffix(')') {
+                let func_name = func_name.trim().to_uppercase();
+                match func_name.as_str() {
+                    "SUM" | "AVG" | "MAX" | "MIN" | "STDEV" => {
+                        return parse_range(sheet, args.trim()).is_some();
+                    }
+                    "SLEEP" => {
+                        return args.parse::<i32>().is_ok() || parse_cell_reference(sheet, args.trim()).is_some();
+                    }
+                    _ => return false,
                 }
-                "BOLD" | "ITALIC" | "UNDERLINE" => {
-                    return parse_cell_reference(sheet, args.trim()).is_some();
-                }
-                "AUTOFILL" | "SORTA" | "SORTD" => {
-                    return parse_range(sheet, args.trim()).is_some();}
-                _ => return false,
             }
         }
     }
-}
-else { if let Some((func_name, args)) = formula.split_once('(') {
-    if let Some(args) = args.strip_suffix(')') {
-        let func_name = func_name.trim().to_uppercase();
-        match func_name.as_str() {
-            "SUM" | "AVG" | "MAX" | "MIN" | "STDEV" => {
-                return parse_range(sheet, args.trim()).is_some();
-            }
-            "SLEEP" => {
-                return args.parse::<i32>().is_ok() || parse_cell_reference(sheet, args.trim()).is_some();
-            }
-            // "BOLD" | "ITALIC" | "UNDERLINE" => {
-            //     return parse_cell_reference(sheet, args.trim()).is_some();
-            // }
-            // "AUTOFILL" => {
-            //     return parse_range(sheet, args.trim()).is_some();}
-            _ => return false,
-        }
-    }
-}
-}
 
     if formula.contains('+') || formula.contains('-') || 
        formula.contains('*') || formula.contains('/') {
@@ -343,8 +317,8 @@ pub fn is_valid_command(sheet: &mut Sheet, command: &str) -> bool {
         return true;
     }
     if sheet.extension_enabled && (command == "undo" || command == "redo" || 
-    command.starts_with("FORMULA ") || command.starts_with("ROWDEL ") || 
-    command.starts_with("COLDEL ")) {
+       command.starts_with("FORMULA ") || command.starts_with("ROWDEL ") || 
+       command.starts_with("COLDEL ")) {
         if command.starts_with("FORMULA ") {
             return parse_cell_reference(sheet, &command[8..].trim()).is_some();
         }
@@ -376,7 +350,6 @@ pub fn is_valid_command(sheet: &mut Sheet, command: &str) -> bool {
         };
         return parse_range(sheet, range).is_some();
     }
-    
 
     if sheet.extension_enabled && command.starts_with("CUT") {
         let range = if command.starts_with("CUT ") {
@@ -386,7 +359,6 @@ pub fn is_valid_command(sheet: &mut Sheet, command: &str) -> bool {
         };
         return parse_range(sheet, range).is_some();
     }
-    
 
     if sheet.extension_enabled && command.starts_with("PASTE") {
         let cell_ref = if command.starts_with("PASTE ") {
