@@ -19,8 +19,8 @@ pub fn create_sheet(rows: i32, cols: i32, extension_enabled: bool) -> Option<She
             formula: None,
             is_formula: false,
             is_error: false,
-            dependencies: None,
-            dependents: None,
+            dependencies: Vec::new(),
+            dependents: Vec::new(),
             has_circular: false,
             is_bold: false,
             is_italic: false,
@@ -231,7 +231,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                         cell.formula = None;
                         cell.is_formula = false;
                         cell.is_error = false;
-                        cell.dependencies = None;
+                        cell.dependencies = Vec::new();
                         cell.is_bold = false;
                         cell.is_italic = false;
                         cell.is_underline = false;
@@ -253,7 +253,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                         cell.formula = None;
                         cell.is_formula = false;
                         cell.is_error = false;
-                        cell.dependencies = None;
+                        cell.dependencies = Vec::new();
                         cell.is_bold = false;
                         cell.is_italic = false;
                         cell.is_underline = false;
