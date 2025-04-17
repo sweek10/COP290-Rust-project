@@ -6,11 +6,6 @@ pub enum DependencyType {
     Range { start_row: i32, start_col: i32, end_row: i32, end_col: i32 },
 }
 
-#[derive(Clone, Debug)]
-pub struct CellDependency {
-    pub dependency: DependencyType,
-    pub next: Option<Box<CellDependency>>,
-}
 #[derive(Debug)]
 pub enum PatternType {
     Constant(i32),           // All values are the same
@@ -28,23 +23,23 @@ pub struct Cell {
     pub formula: Option<String>,
     pub is_formula: bool,
     pub is_error: bool,
-    pub dependencies: Option<Box<CellDependency>>,
-    pub dependents: Option<Box<CellDependency>>,
+    pub dependencies: Vec<DependencyType>,  
+    pub dependents: Vec<DependencyType>,    
     pub has_circular: bool,
     pub is_bold: bool,
     pub is_italic: bool,
     pub is_underline: bool,
 }
+
 impl Cell {
-    // Add a default constructor or update existing creation logic
     pub fn new() -> Self {
         Cell {
             value: 0,
             formula: None,
             is_formula: false,
             is_error: false,
-            dependencies: None,
-            dependents: None,
+            dependencies: Vec::new(),      // Initialize empty vector
+            dependents: Vec::new(),        // Initialize empty vector
             has_circular: false,
             is_bold: false,
             is_italic: false,
