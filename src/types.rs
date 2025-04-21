@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub enum DependencyType {
@@ -6,15 +7,21 @@ pub enum DependencyType {
     Range { start_row: i32, start_col: i32, end_row: i32, end_col: i32 },
 }
 
+#[derive(Clone, Debug)]
+pub struct CellDependencies {
+    pub dependencies: Vec<DependencyType>, // Cells this cell depends on
+    pub dependents: Vec<DependencyType>,  // Cells that depend on this cell
+}
+
 #[derive(Debug)]
 pub enum PatternType {
-    Constant(i32),           // All values are the same
-    Arithmetic(i32, i32),    // (initial_value, difference)
-    Fibonacci(i32, i32),     // (penultimate, last) for Fibonacci sequence
+    Constant(i32),
+    Arithmetic(i32, i32),
+    Fibonacci(i32, i32),
     Geometric(i32, f64),
-    Factorial(i32, i32),     // (last_value, next_index) e.g., (6, 4) for next = 24
+    Factorial(i32, i32),
     Triangular(i32, i32),
-    Unknown,                 // No recognized pattern
+    Unknown,
 }
 
 #[derive(Clone, Debug)]
@@ -23,8 +30,6 @@ pub struct Cell {
     pub formula: Option<String>,
     pub is_formula: bool,
     pub is_error: bool,
-    pub dependencies: Vec<DependencyType>,  
-    pub dependents: Vec<DependencyType>,    
     pub has_circular: bool,
     pub is_bold: bool,
     pub is_italic: bool,
@@ -38,8 +43,6 @@ impl Cell {
             formula: None,
             is_formula: false,
             is_error: false,
-            dependencies: Vec::new(),      // Initialize empty vector
-            dependents: Vec::new(),        // Initialize empty vector
             has_circular: false,
             is_bold: false,
             is_italic: false,
@@ -60,13 +63,13 @@ pub struct Sheet {
     pub command_history: Vec<String>,
     pub command_position: usize,
     pub max_history_size: usize,
+    pub dependency_graph: HashMap<(i32, i32), CellDependencies>, // Unified dependency tracking
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum GraphType {
     Bar,
     Scatter,
-   
 }
 
 #[derive(Clone, Debug)]
@@ -75,7 +78,6 @@ pub struct Clipboard {
     pub is_cut: bool,
     pub source_range: Option<(i32, i32, i32, i32)>,
 }
-
 
 lazy_static::lazy_static! {
     pub static ref SHEET: Mutex<Option<Sheet>> = Mutex::new(None);
