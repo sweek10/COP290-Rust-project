@@ -37,51 +37,46 @@ pub fn calculate_range_function(sheet: &mut Sheet, function: &str, range: &str) 
         None => return Err(()),
     };
 
-    let mut count = 0;
-    let mut sum = 0.0;
-    let mut min = f64::MAX;
-    let mut max = f64::MIN;
-    let mut sum_squares = 0.0;
-
-    // Single pass: check for errors and compute statistics
+    // Collect values into a vector
+    let mut values = Vec::new();
     for i in start_row..=end_row {
         for j in start_col..=end_col {
             let cell = &sheet.cells[i as usize][j as usize];
             if cell.is_error {
-                return Err(()); // Any error in the range causes the function to return an error
+                return Err(());
             }
-            let value = cell.value as f64;
-            sum += value;
-            min = min.min(value);
-            max = max.max(value);
-            sum_squares += value * value;
-            count += 1;
+            values.push(cell.value as f64);
         }
     }
 
+    let count = values.len();
     if count == 0 {
-        return Err(()); // Empty range is considered an error
+        return Err(());
     }
-
-    let mean = sum / count as f64;
 
     match function.to_uppercase().as_str() {
         "STDEV" => {
-            let variance = (sum_squares / count as f64) - (mean * mean);
-            if variance <= 0.0 {
-                Ok(0.0)
-            } else {
-                Ok(variance.sqrt())
+            if count <= 1 {
+                return Ok(0.0); // Avoid division by zero, as in C code
             }
+
+            // Calculate mean
+            let sum: f64 = values.iter().sum();
+            let mean = sum / count as f64;
+
+            // Calculate variance
+            let variance: f64 = values.iter().map(|&x| (x - mean) * (x - mean)).sum::<f64>() / count as f64;
+
+            // Return standard deviation (rounded, as in C code)
+            Ok(variance.sqrt().round())
         }
-        "MIN" => Ok(min),
-        "MAX" => Ok(max),
-        "SUM" => Ok(sum),
-        "AVG" => Ok(mean),
+        "MIN" => Ok(values.iter().copied().fold(f64::MAX, f64::min)),
+        "MAX" => Ok(values.iter().copied().fold(f64::MIN, f64::max)),
+        "SUM" => Ok(values.iter().sum()),
+        "AVG" => Ok(values.iter().sum::<f64>() / count as f64),
         _ => Err(()),
     }
 }
-
 pub fn evaluate_arithmetic(expr: &str, is_error: &mut bool) -> i32 {
     let tokens: Vec<&str> = expr.split_whitespace().collect();
     if tokens.len() == 1 {
@@ -262,7 +257,7 @@ pub fn is_valid_formula(sheet: &mut Sheet, formula: &str) -> bool {
             if let Some(args) = args.strip_suffix(')') {
                 let func_name = func_name.trim().to_uppercase();
                 match func_name.as_str() {
-                    "SUM" | "AVG" | "MAX" | "MIN" | "STDEV" => {
+                    "SUM" | "AVG" | "MAX" | "MIN" | "STDEV" | "SORTA" | "SORTD" | "AUTOFILL" => {
                         return parse_range(sheet, args.trim()).is_some();
                     }
                     "SLEEP" => {
@@ -270,9 +265,6 @@ pub fn is_valid_formula(sheet: &mut Sheet, formula: &str) -> bool {
                     }
                     "BOLD" | "ITALIC" | "UNDERLINE" => {
                         return parse_cell_reference(sheet, args.trim()).is_some();
-                    }
-                    "AUTOFILL" | "SORTA" | "SORTD" => {
-                        return parse_range(sheet, args.trim()).is_some();
                     }
                     _ => return false,
                 }
@@ -316,21 +308,19 @@ pub fn is_valid_command(sheet: &mut Sheet, command: &str) -> bool {
     if command == "disable_output" || command == "enable_output" {
         return true;
     }
-    if sheet.extension_enabled && (command == "undo" || command == "redo" || 
-       command.starts_with("FORMULA ") || command.starts_with("ROWDEL ") || 
-       command.starts_with("COLDEL ")) {
-        if command.starts_with("FORMULA ") {
-            return parse_cell_reference(sheet, &command[8..].trim()).is_some();
-        }
-        if command.starts_with("ROWDEL ") {
-            let row_str = &command[7..].trim();
-            return row_str.parse::<i32>().map_or(false, |r| r >= 1 && r <= sheet.rows);
-        }
-        if command.starts_with("COLDEL ") {
-            let col_str = &command[7..].trim();
-            return col_str.chars().all(|c| c.is_ascii_alphabetic());
-        }
+    if sheet.extension_enabled && (command == "undo" || command == "redo") {
         return true;
+    }
+    if sheet.extension_enabled && command.starts_with("FORMULA ") {
+        return parse_cell_reference(sheet, &command[8..].trim()).is_some();
+    }
+    if sheet.extension_enabled && command.starts_with("ROWDEL ") {
+        let row_str = &command[7..].trim();
+        return row_str.parse::<i32>().map_or(false, |r| r >= 1 && r <= sheet.rows);
+    }
+    if sheet.extension_enabled && command.starts_with("COLDEL ") {
+        let col_str = &command[7..].trim();
+        return col_str.chars().all(|c| c.is_ascii_alphabetic());
     }
     if command.starts_with("scroll_to ") {
         return parse_cell_reference(sheet, &command[10..]).is_some();
@@ -341,37 +331,20 @@ pub fn is_valid_command(sheet: &mut Sheet, command: &str) -> bool {
                ["(BAR)", "(SCATTER)"].contains(&parts[1].to_uppercase().as_str()) && 
                parse_range(sheet, parts[2]).is_some();
     }
-
-    if sheet.extension_enabled && command.starts_with("COPY") {
-        let range = if command.starts_with("COPY ") {
-            &command[5..]
-        } else {
-            &command[4..]
-        };
+    if sheet.extension_enabled && (command.starts_with("COPY ") || command.starts_with("COPY")) {
+        let range = if command.starts_with("COPY ") { &command[5..] } else { &command[4..] };
         return parse_range(sheet, range).is_some();
     }
-
-    if sheet.extension_enabled && command.starts_with("CUT") {
-        let range = if command.starts_with("CUT ") {
-            &command[4..]
-        } else {
-            &command[3..]
-        };
+    if sheet.extension_enabled && (command.starts_with("CUT ") || command.starts_with("CUT")) {
+        let range = if command.starts_with("CUT ") { &command[4..] } else { &command[3..] };
         return parse_range(sheet, range).is_some();
     }
-
-    if sheet.extension_enabled && command.starts_with("PASTE") {
-        let cell_ref = if command.starts_with("PASTE ") {
-            &command[6..]
-        } else {
-            &command[5..]
-        };
+    if sheet.extension_enabled && (command.starts_with("PASTE ") || command.starts_with("PASTE")) {
+        let cell_ref = if command.starts_with("PASTE ") { &command[6..] } else { &command[5..] };
         return parse_cell_reference(sheet, cell_ref).is_some();
     }
     
     command.split_once('=').map_or(false, |(ref_str, formula)| {
-        parse_cell_reference(sheet, ref_str.trim()).is_some() && 
-        !formula.is_empty() && 
-        is_valid_formula(sheet, formula)
+        parse_cell_reference(sheet, ref_str.trim()).is_some() && is_valid_formula(sheet, formula.trim())
     })
 }
