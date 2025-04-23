@@ -25,8 +25,8 @@ struct CommandForm {
     command: String,
 }
 
-#[get("/")]
-fn index() -> Template {
+#[get("/?<message>")]
+fn index(message: Option<String>) -> Template {
     let sheet = SHEET.lock().unwrap();
     let sheet = sheet.as_ref().unwrap();
     let view_row = sheet.view_row;
@@ -71,18 +71,28 @@ fn index() -> Template {
     Template::render("index", json!({
         "columns": columns,
         "rows": rows_data,
-        "circular_detected": sheet.circular_dependency_detected
+        "circular_detected": sheet.circular_dependency_detected,
+        "message": message,
     }))
 }
 
 #[post("/command", data = "<form>")]
 fn command(form: Form<CommandForm>) -> Redirect {
     let command = form.command.clone();
-    let mut sheet = SHEET.lock().unwrap();
-    if let Some(ref mut sheet) = *sheet {
-        process_command(sheet, &command);
+    let message = {
+        let mut sheet = SHEET.lock().unwrap();
+        if let Some(ref mut sheet) = *sheet {
+            process_command(sheet, &command)
+        } else {
+            None
+        }
+    };
+    if let Some(msg) = message {
+        let encoded_msg = urlencoding::encode(&msg);
+        Redirect::to(format!("/?message={}", encoded_msg))
+    } else {
+        Redirect::to("/")
     }
-    Redirect::to("/")
 }
 
 #[post("/scroll/<direction>")]
@@ -259,7 +269,7 @@ async fn main() -> Result<(), rocket::Error> {
                 }
             }
         }
-    } // Drop sheet_guard here
+    }
 
     if extension_enabled {
         rocket::build()
@@ -296,11 +306,16 @@ async fn main() -> Result<(), rocket::Error> {
             }
             is_valid = is_valid_command(&mut SHEET.lock().unwrap().as_mut().unwrap(), command);
             let start = Instant::now();
-            {
+            let message = {
                 let mut sheet_guard = SHEET.lock().unwrap();
                 if let Some(ref mut sheet) = *sheet_guard {
-                    process_command(sheet, command);
+                    process_command(sheet, command)
+                } else {
+                    None
                 }
+            };
+            if let Some(msg) = message {
+                println!("{}", msg);
             }
             elapsed_time = start.elapsed().as_secs_f64();
         }
