@@ -51,6 +51,12 @@ impl Cell {
     }
 }
 
+#[derive(Clone)]
+pub struct SheetState {
+    pub cells: Vec<Vec<Cell>>,
+    pub dependency_graph: HashMap<(i32, i32), CellDependencies>,
+}
+
 pub struct Sheet {
     pub cells: Vec<Vec<Cell>>,
     pub rows: i32,
@@ -63,7 +69,9 @@ pub struct Sheet {
     pub command_history: Vec<String>,
     pub command_position: usize,
     pub max_history_size: usize,
-    pub dependency_graph: HashMap<(i32, i32), CellDependencies>, // Unified dependency tracking
+    pub dependency_graph: HashMap<(i32, i32), CellDependencies>,
+    pub undo_stack: Vec<SheetState>,
+    pub redo_stack: Vec<SheetState>,
 }
 
 #[derive(Debug, Clone, Copy)]
