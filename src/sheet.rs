@@ -146,40 +146,43 @@ fn rebuild_sheet_state(sheet: &mut Sheet) {
     sheet.output_enabled = output_enabled;
 }
 
-pub fn process_command(sheet: &mut Sheet, command: &str) {
+pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
     if command.is_empty() {
-        return;
+        return None;
     }
 
     if command.len() == 1 {
         match command.chars().next().unwrap() {
-            'w' => scroll_sheet(sheet, 'w'),
-            'a' => scroll_sheet(sheet, 'a'),
-            's' => scroll_sheet(sheet, 's'),
-            'd' => scroll_sheet(sheet, 'd'),
+            'w' => { scroll_sheet(sheet, 'w'); return None; }
+            'a' => { scroll_sheet(sheet, 'a'); return None; }
+            's' => { scroll_sheet(sheet, 's'); return None; }
+            'd' => { scroll_sheet(sheet, 'd'); return None; }
             'q' => std::process::exit(0),
-            _ => {}
+            _ => return Some("Invalid single-character command".to_string()),
         }
-        return;
     }
 
     if command == "disable_output" {
         sheet.output_enabled = false;
-        return;
+        return None;
     }
     if command == "enable_output" {
         sheet.output_enabled = true;
-        return;
+        return None;
     }
 
     if sheet.extension_enabled {
         if command == "undo" {
-            undo(sheet);
-            return;
+            if !undo(sheet) {
+                return Some("Nothing to undo".to_string());
+            }
+            return None;
         }
         if command == "redo" {
-            redo(sheet);
-            return;
+            if !redo(sheet) {
+                return Some("Nothing to redo".to_string());
+            }
+            return None;
         }
 
         if command.starts_with("FORMULA ") {
@@ -187,62 +190,63 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
             if let Some((row, col)) = parse_cell_reference(sheet, cell_ref) {
                 let cell = &sheet.cells[row as usize][col as usize];
                 if let Some(formula) = &cell.formula {
-                    println!("Formula in cell {}: {}", cell_ref, formula);
+                    return Some(format!("Formula in cell {}: {}", cell_ref, formula));
                 } else {
-                    println!("No formula stored in cell {}", cell_ref);
+                    return Some(format!("No formula stored in cell {}", cell_ref));
                 }
             } else {
-                println!("Invalid cell reference: {}", cell_ref);
+                return Some(format!("Invalid cell reference: {}", cell_ref));
             }
-            return;
         }
 
-        // Update ROWDEL
-    if command.starts_with("ROWDEL ") {
-        let row_str = &command[7..].trim();
-        if let Ok(row) = row_str.parse::<i32>() {
-            if row >= 1 && row <= sheet.rows {
-                for col in 0..sheet.cols {
-                    let cell = &mut sheet.cells[(row-1) as usize][col as usize];
-                    cell.value = 0;
-                    cell.formula = None;
-                    cell.is_formula = false;
-                    cell.is_error = false;
-                    cell.is_bold = false;
-                    cell.is_italic = false;
-                    cell.is_underline = false;
-                    // Remove this cell's dependencies and dependents
-                    if let Some(cell_deps) = sheet.dependency_graph.remove(&((row-1), col)) {
-                        for dep in cell_deps.dependencies {
-                            match dep {
-                                DependencyType::Single { row: r, col: c } => {
-                                    remove_dependency(sheet, r, c, row-1, col, true);
-                                }
-                                DependencyType::Range { start_row, start_col, end_row, end_col } => {
-                                    for i in start_row..=end_row {
-                                        for j in start_col..=end_col {
-                                            remove_dependency(sheet, i, j, row-1, col, true);
+        if command.starts_with("ROWDEL ") {
+            let row_str = &command[7..].trim();
+            if let Ok(row) = row_str.parse::<i32>() {
+                if row >= 1 && row <= sheet.rows {
+                    for col in 0..sheet.cols {
+                        let cell = &mut sheet.cells[(row-1) as usize][col as usize];
+                        cell.value = 0;
+                        cell.formula = None;
+                        cell.is_formula = false;
+                        cell.is_error = false;
+                        cell.is_bold = false;
+                        cell.is_italic = false;
+                        cell.is_underline = false;
+                        if let Some(cell_deps) = sheet.dependency_graph.remove(&((row-1), col)) {
+                            for dep in cell_deps.dependencies {
+                                match dep {
+                                    DependencyType::Single { row: r, col: c } => {
+                                        remove_dependency(sheet, r, c, row-1, col, true);
+                                    }
+                                    DependencyType::Range { start_row, start_col, end_row, end_col } => {
+                                        for i in start_row..=end_row {
+                                            for j in start_col..=end_col {
+                                                remove_dependency(sheet, i, j, row-1, col, true);
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
-                        for dep in cell_deps.dependents {
-                            match dep {
-                                DependencyType::Single { row: r, col: c } => {
-                                    remove_dependency(sheet, r, c, row-1, col, false);
+                            for dep in cell_deps.dependents {
+                                match dep {
+                                    DependencyType::Single { row: r, col: c } => {
+                                        remove_dependency(sheet, r, c, row-1, col, false);
+                                    }
+                                    DependencyType::Range { .. } => {}
                                 }
-                                DependencyType::Range { .. } => {} // Dependents are Single
                             }
                         }
                     }
+                    add_to_history(sheet, command);
+                    return None;
+                } else {
+                    return Some(format!("Invalid row number: {}", row));
                 }
-                add_to_history(sheet, command);
+            } else {
+                return Some("Invalid ROWDEL format: use ROWDEL <number>".to_string());
             }
         }
-        return;
-    }
-        
+
         if command.starts_with("COLDEL ") {
             let col_str = &command[7..].trim();
             if !col_str.is_empty() && col_str.chars().all(|c| c.is_ascii_alphabetic()) {
@@ -256,7 +260,6 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                         cell.is_bold = false;
                         cell.is_italic = false;
                         cell.is_underline = false;
-                        // Remove this cell's dependencies and dependents
                         if let Some(cell_deps) = sheet.dependency_graph.remove(&(row, col)) {
                             for dep in cell_deps.dependencies {
                                 match dep {
@@ -283,51 +286,52 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                         }
                     }
                     add_to_history(sheet, command);
+                    return None;
+                } else {
+                    return Some(format!("Invalid column reference: {}", col_str));
                 }
+            } else {
+                return Some("Invalid COLDEL format: use COLDEL <column>".to_string());
             }
-            return;
         }
+
         if command.starts_with("COPY ") {
             let range = &command[5..];
             if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, range) {
                 if copy_range(sheet, start_row, start_col, end_row, end_col) {
-                    if sheet.output_enabled {
-                        println!("Copied to clipboard");
-                    }
+                    return Some("Copied to clipboard".to_string());
                 } else {
-                    println!("Invalid range for copy");
+                    return Some("Invalid range for copy".to_string());
                 }
+            } else {
+                return Some("Invalid COPY format: use COPY <range>".to_string());
             }
-            return;
         }
 
         if command.starts_with("CUT ") {
             let range = &command[4..];
             if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, range) {
                 if cut_range(sheet, start_row, start_col, end_row, end_col) {
-                    if sheet.output_enabled {
-                        println!("Cut to clipboard");
-                    }
+                    return Some("Cut to clipboard".to_string());
                 } else {
-                    println!("Invalid range for cut");
+                    return Some("Invalid range for cut".to_string());
                 }
+            } else {
+                return Some("Invalid CUT format: use CUT <range>".to_string());
             }
-            return;
         }
 
         if command.starts_with("PASTE ") {
             let cell_ref = &command[6..];
             if let Some((row, col)) = parse_cell_reference(sheet, cell_ref) {
                 if paste_range(sheet, row, col) {
-                    if sheet.output_enabled {
-                        println!("Pasted from clipboard");
-                        display_sheet(sheet);
-                    }
+                    return Some("Pasted from clipboard".to_string());
                 } else {
-                    println!("Nothing to paste or invalid target");
+                    return Some("Nothing to paste or invalid target".to_string());
                 }
+            } else {
+                return Some("Invalid PASTE format: use PASTE <cell>".to_string());
             }
-            return;
         }
 
         if command.starts_with("GRAPH ") {
@@ -336,20 +340,17 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                 let graph_type = match parts[1].to_uppercase().as_str() {
                     "(BAR)" => GraphType::Bar,
                     "(SCATTER)" => GraphType::Scatter,
-                    _ => {
-                        println!("Invalid graph type. Use BAR or LINE");
-                        return;
-                    }
+                    _ => return Some("Invalid graph type. Use (BAR) or (SCATTER)".to_string()),
                 };
                 if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, parts[2]) {
-                    display_graph(sheet, graph_type, start_row, start_col, end_row, end_col);
+                    let graph_output = display_graph(sheet, graph_type, start_row, start_col, end_row, end_col);
+                    return Some(graph_output);
                 } else {
-                    println!("Invalid range for graph");
+                    return Some("Invalid range for graph".to_string());
                 }
             } else {
-                println!("Usage: GRAPH <type> <range> (e.g., GRAPH BAR A1:A10)");
+                return Some("Usage: GRAPH <type> <range> (e.g., GRAPH (BAR) A1:A10)".to_string());
             }
-            return;
         }
     }
 
@@ -357,10 +358,10 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
         let cell_ref = &command[10..];
         if let Some((row, col)) = parse_cell_reference(sheet, cell_ref) {
             scroll_to_cell(sheet, row, col);
+            return None;
         } else {
-            println!("Invalid cell reference for scroll");
+            return Some("Invalid cell reference for scroll".to_string());
         }
-        return;
     }
 
     if let Some((cell_ref, formula)) = command.split_once('=') {
@@ -471,12 +472,12 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                                     }
                                 }
                             }
-                            return;
+                            return None;
                         }
                     } else if func_name.trim().to_uppercase() == "AUTOFILL" {
                         if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, range_arg) {
                             if start_col != end_col && start_row != end_row {
-                                return;
+                                return None;
                             }
                             if start_col == end_col {
                                 let mut values = Vec::new();
@@ -484,7 +485,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                                     values.push(sheet.cells[i as usize][start_col as usize].value);
                                 }
                                 if values.is_empty() {
-                                    return;
+                                    return None;
                                 }
                                 let pattern = detect_pattern(sheet, start_row, start_col, end_row, end_col);
                                 match pattern {
@@ -563,7 +564,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                                     values.push(sheet.cells[start_row as usize][j as usize].value);
                                 }
                                 if values.is_empty() {
-                                    return;
+                                    return None;
                                 }
                                 let pattern = detect_pattern(sheet, start_row, start_col, end_row, end_col);
                                 match pattern {
@@ -637,7 +638,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                                     PatternType::Unknown => {}
                                 }
                             }
-                            return;
+                            return None;
                         }
                     } else if let Some(cell_arg) = args.strip_suffix(')') {
                         let cell_arg = cell_arg.trim();
@@ -645,15 +646,15 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                             match func_name.trim().to_uppercase().as_str() {
                                 "BOLD" => {
                                     sheet.cells[row as usize][col as usize].is_bold = true;
-                                    return;
+                                    return None;
                                 }
                                 "ITALIC" => {
                                     sheet.cells[row as usize][col as usize].is_italic = true;
-                                    return;
+                                    return None;
                                 }
                                 "UNDERLINE" => {
                                     sheet.cells[row as usize][col as usize].is_underline = true;
-                                    return;
+                                    return None;
                                 }
                                 _ => {}
                             }
@@ -662,11 +663,12 @@ pub fn process_command(sheet: &mut Sheet, command: &str) {
                 }
             }
             update_cell(sheet, row, col, formula);
+            return None;
         } else {
-            println!("Invalid cell reference");
+            return Some("Invalid cell reference".to_string());
         }
     } else {
-        println!("Invalid command format");
+        return Some("Invalid command format".to_string());
     }
 }
 
@@ -736,7 +738,7 @@ pub fn display_sheet(sheet: &Sheet) {
     io::stdout().flush().unwrap();
 }
 
-pub fn display_graph(sheet: &mut Sheet, graph_type: GraphType, start_row: i32, start_col: i32, end_row: i32, end_col: i32) {
+pub fn display_graph(sheet: &mut Sheet, graph_type: GraphType, start_row: i32, start_col: i32, end_row: i32, end_col: i32) -> String {
     let mut values = Vec::new();
     let mut labels = Vec::new();
     
@@ -755,59 +757,62 @@ pub fn display_graph(sheet: &mut Sheet, graph_type: GraphType, start_row: i32, s
     let max_label_width = labels.iter().map(|l| l.len()).max().unwrap_or(2);
     let column_width = max_label_width.max(3) + 1;
 
+    let mut output = String::new();
+
     match graph_type {
         GraphType::Bar => {
-            println!("\nBar Graph for range:");
+            output.push_str(&format!("\nBar Graph for range:\n"));
             for value in (1..=max_val).rev() {
-                print!("{:2} |", value);
+                output.push_str(&format!("{:2} |", value));
                 for &cell_value in &values {
                     if cell_value >= value {
-                        print!("{:^width$}", "█", width = column_width);
+                        output.push_str(&format!("{:^width$}", "█", width = column_width));
                     } else {
-                        print!("{:^width$}", " ", width = column_width);
+                        output.push_str(&format!("{:^width$}", " ", width = column_width));
                     }
                 }
-                println!();
+                output.push('\n');
             }
-            print!("---+");
+            output.push_str("---+");
             for _ in &values {
-                print!("{}", "-".repeat(column_width));
+                output.push_str(&"-".repeat(column_width));
             }
-            println!();
-            print!("   |");
+            output.push('\n');
+            output.push_str("   |");
             for label in &labels {
-                print!("{:^width$}", label, width = column_width);
+                output.push_str(&format!("{:^width$}", label, width = column_width));
             }
-            println!("\n");
+            output.push_str("\n");
         },
         GraphType::Scatter => {
-            println!("\nScatter Plot for range:");
+            output.push_str(&format!("\nScatter Plot for range:\n"));
             for value in (1..=max_val).rev() {
-                print!("{:2} |", value);
+                output.push_str(&format!("{:2} |", value));
                 for &cell_value in &values {
                     let center = column_width / 2;
                     if cell_value == value {
-                        print!("{:width$}", " ", width = center);
-                        print!("*");
-                        print!("{:width$}", " ", width = column_width - center - 1);
+                        output.push_str(&format!("{:width$}", " ", width = center));
+                        output.push('*');
+                        output.push_str(&format!("{:width$}", " ", width = column_width - center - 1));
                     } else {
-                        print!("{:^width$}", " ", width = column_width);
+                        output.push_str(&format!("{:^width$}", " ", width = column_width));
                     }
                 }
-                println!();
+                output.push('\n');
             }
-            print!("---+");
+            output.push_str("---+");
             for _ in &values {
-                print!("{}", "-".repeat(column_width));
+                output.push_str(&"-".repeat(column_width));
             }
-            println!();
-            print!("   |");
+            output.push('\n');
+            output.push_str("   |");
             for label in &labels {
-                print!("{:^width$}", label, width = column_width);
+                output.push_str(&format!("{:^width$}", label, width = column_width));
             }
-            println!("\n");
+            output.push_str("\n");
         }
     }
+    output
 }
 
 impl Sheet {
