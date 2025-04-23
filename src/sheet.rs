@@ -1,5 +1,5 @@
 use std::io::{self, Write};
-use crate::types::{Sheet, Cell, PatternType, GraphType, Clipboard, CLIPBOARD, DependencyType};
+use crate::types::{Sheet, Cell, PatternType, GraphType, Clipboard, CLIPBOARD, DependencyType, SheetState};
 use crate::utils::{encode_column, parse_cell_reference, parse_range, detect_pattern, factorial, triangular};
 use crate::cell::update_cell;
 use std::collections::HashMap;
@@ -28,6 +28,8 @@ pub fn create_sheet(rows: i32, cols: i32, extension_enabled: bool) -> Option<She
         command_position: 0,
         max_history_size: 10,
         dependency_graph: HashMap::new(),
+        undo_stack: Vec::new(),
+        redo_stack: Vec::new(),
     })
 }
 
@@ -97,53 +99,71 @@ pub fn add_to_history(sheet: &mut Sheet, command: &str) {
     }
 }
 
+pub fn save_state(sheet: &mut Sheet) {
+    if !sheet.extension_enabled {
+        return;
+    }
+
+    // Clear redo stack when a new action is performed
+    sheet.redo_stack.clear();
+    
+    // Create a snapshot of the current state
+    let state = SheetState {
+        cells: sheet.cells.clone(),
+        dependency_graph: sheet.dependency_graph.clone(),
+    };
+    
+    // Add to undo stack
+    sheet.undo_stack.push(state);
+    
+    // Maintain history size limit
+    if sheet.undo_stack.len() > sheet.max_history_size {
+        sheet.undo_stack.remove(0);
+    }
+}
+
 pub fn undo(sheet: &mut Sheet) -> bool {
-    if sheet.command_position == 0 || sheet.command_history.is_empty() {
+    if !sheet.extension_enabled || sheet.undo_stack.is_empty() {
         return false;
     }
 
-    sheet.command_position -= 1;
-    rebuild_sheet_state(sheet);
+    // Save current state to redo stack before undoing
+    let current_state = SheetState {
+        cells: sheet.cells.clone(),
+        dependency_graph: sheet.dependency_graph.clone(),
+    };
+    sheet.redo_stack.push(current_state);
+    
+    // Get the previous state
+    let previous_state = sheet.undo_stack.pop().unwrap();
+    
+    // Restore the sheet to the previous state
+    sheet.cells = previous_state.cells;
+    sheet.dependency_graph = previous_state.dependency_graph;
+    
     true
 }
 
 pub fn redo(sheet: &mut Sheet) -> bool {
-    if sheet.command_position >= sheet.command_history.len() {
+    if !sheet.extension_enabled || sheet.redo_stack.is_empty() {
         return false;
     }
 
-    sheet.command_position += 1;
-    rebuild_sheet_state(sheet);
+    // Save current state to undo stack before redoing
+    let current_state = SheetState {
+        cells: sheet.cells.clone(),
+        dependency_graph: sheet.dependency_graph.clone(),
+    };
+    sheet.undo_stack.push(current_state);
+    
+    // Get the next state
+    let next_state = sheet.redo_stack.pop().unwrap();
+    
+    // Restore the sheet to the next state
+    sheet.cells = next_state.cells;
+    sheet.dependency_graph = next_state.dependency_graph;
+    
     true
-}
-
-fn rebuild_sheet_state(sheet: &mut Sheet) {
-    let view_row = sheet.view_row;
-    let view_col = sheet.view_col;
-    let output_enabled = sheet.output_enabled;
-    
-    for row in &mut sheet.cells {
-        for cell in row {
-            *cell = Cell::new();
-        }
-    }
-    
-    sheet.circular_dependency_detected = false;
-    
-    let commands_to_replay: Vec<String> = sheet.command_history[0..sheet.command_position].to_vec();
-    
-    for cmd in commands_to_replay {
-        if let Some((cell_ref, formula)) = cmd.split_once('=') {
-            let cell_ref = cell_ref.trim();
-            if let Some((row, col)) = parse_cell_reference(sheet, cell_ref) {
-                update_cell(sheet, row, col, formula.trim());
-            }
-        }
-    }
-    
-    sheet.view_row = view_row;
-    sheet.view_col = view_col;
-    sheet.output_enabled = output_enabled;
 }
 
 pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
@@ -200,6 +220,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
         }
 
         if command.starts_with("ROWDEL ") {
+            save_state(sheet);
             let row_str = &command[7..].trim();
             if let Ok(row) = row_str.parse::<i32>() {
                 if row >= 1 && row <= sheet.rows {
@@ -237,7 +258,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                             }
                         }
                     }
-                    add_to_history(sheet, command);
+                    
                     return None;
                 } else {
                     return Some(format!("Invalid row number: {}", row));
@@ -248,6 +269,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
         }
 
         if command.starts_with("COLDEL ") {
+            save_state(sheet);
             let col_str = &command[7..].trim();
             if !col_str.is_empty() && col_str.chars().all(|c| c.is_ascii_alphabetic()) {
                 if let Some((_, col)) = parse_cell_reference(sheet, &format!("{}1", col_str)) {
@@ -285,7 +307,6 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                             }
                         }
                     }
-                    add_to_history(sheet, command);
                     return None;
                 } else {
                     return Some(format!("Invalid column reference: {}", col_str));
@@ -309,6 +330,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
         }
 
         if command.starts_with("CUT ") {
+            save_state(sheet);
             let range = &command[4..];
             if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, range) {
                 if cut_range(sheet, start_row, start_col, end_row, end_col) {
@@ -322,6 +344,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
         }
 
         if command.starts_with("PASTE ") {
+            save_state(sheet);
             let cell_ref = &command[6..];
             if let Some((row, col)) = parse_cell_reference(sheet, cell_ref) {
                 if paste_range(sheet, row, col) {
@@ -369,7 +392,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
         let formula = formula.trim();
         if let Some((row, col)) = parse_cell_reference(sheet, cell_ref) {
             if sheet.extension_enabled {
-                add_to_history(sheet, command);
+                save_state(sheet);
             }
             if let Some((func_name, args)) = formula.split_once('(') {
                 if let Some(range_arg) = args.strip_suffix(')') {
@@ -454,8 +477,10 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                                     }
                                 }
                                 if func_name.trim().to_uppercase() == "SORTA" {
+                                    save_state(sheet);
                                     all_values.sort();
                                 } else {
+                                    save_state(sheet);
                                     all_values.sort_by(|a, b| b.cmp(a));
                                 }
                                 let mut idx = 0;
@@ -475,6 +500,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                             return None;
                         }
                     } else if func_name.trim().to_uppercase() == "AUTOFILL" {
+                        save_state(sheet);
                         if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, range_arg) {
                             if start_col != end_col && start_row != end_row {
                                 return None;
@@ -641,6 +667,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                             return None;
                         }
                     } else if let Some(cell_arg) = args.strip_suffix(')') {
+                        save_state(sheet);
                         let cell_arg = cell_arg.trim();
                         if let Some((row, col)) = parse_cell_reference(sheet, cell_arg) {
                             match func_name.trim().to_uppercase().as_str() {
