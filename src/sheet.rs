@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use crate::dependencies::remove_dependency;
 
 const DISPLAY_SIZE: i32 = 10;
+type CellAttributes = (i32, Option<String>, bool, bool, bool, bool, bool);
 
 
 pub fn create_sheet(rows: i32, cols: i32, extension_enabled: bool) -> Option<Sheet> {
@@ -76,28 +77,28 @@ pub fn scroll_to_cell(sheet: &mut Sheet, row: i32, col: i32) {
     }
 }
 
-pub fn add_to_history(sheet: &mut Sheet, command: &str) {
-    if command.len() == 1 && "wasd".contains(command) || 
-       command == "undo" || 
-       command == "redo" ||
-       command == "disable_output" || 
-       command == "enable_output" ||
-       command.starts_with("scroll_to ") ||
-       command.contains("AUTOFILL") {
-        return;
-    }
+// pub fn add_to_history(sheet: &mut Sheet, command: &str) {
+//     if command.len() == 1 && "wasd".contains(command) || 
+//        command == "undo" || 
+//        command == "redo" ||
+//        command == "disable_output" || 
+//        command == "enable_output" ||
+//        command.starts_with("scroll_to ") ||
+//        command.contains("AUTOFILL") {
+//         return;
+//     }
 
-    if sheet.command_position < sheet.command_history.len() {
-        sheet.command_history.truncate(sheet.command_position);
-    }
+//     if sheet.command_position < sheet.command_history.len() {
+//         sheet.command_history.truncate(sheet.command_position);
+//     }
 
-    sheet.command_history.push(command.to_string());
-    if sheet.command_history.len() > sheet.max_history_size {
-        sheet.command_history.remove(0);
-    } else {
-        sheet.command_position += 1;
-    }
-}
+//     sheet.command_history.push(command.to_string());
+//     if sheet.command_history.len() > sheet.max_history_size {
+//         sheet.command_history.remove(0);
+//     } else {
+//         sheet.command_position += 1;
+//     }
+// }
 
 pub fn save_state(sheet: &mut Sheet) {
     if !sheet.extension_enabled {
@@ -205,8 +206,8 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
             return None;
         }
 
-        if command.starts_with("FORMULA ") {
-            let cell_ref = command[8..].trim();
+        if let Some(stripped) = command.strip_prefix("FORMULA ") {
+            let cell_ref = &stripped.trim();
             if let Some((row, col)) = parse_cell_reference(sheet, cell_ref) {
                 let cell = &sheet.cells[row as usize][col as usize];
                 if let Some(formula) = &cell.formula {
@@ -219,9 +220,9 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
             }
         }
 
-        if command.starts_with("ROWDEL ") {
+        if let Some(stripped) = command.strip_prefix("ROWDEL") {
             save_state(sheet);
-            let row_str = &command[7..].trim();
+            let row_str = &stripped.trim();
             if let Ok(row) = row_str.parse::<i32>() {
                 if row >= 1 && row <= sheet.rows {
                     for col in 0..sheet.cols {
@@ -268,9 +269,9 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
             }
         }
 
-        if command.starts_with("COLDEL ") {
+        if let Some(stripped) = command.strip_prefix("COLDEL"){
             save_state(sheet);
-            let col_str = &command[7..].trim();
+            let col_str = &stripped.trim();
             if !col_str.is_empty() && col_str.chars().all(|c| c.is_ascii_alphabetic()) {
                 if let Some((_, col)) = parse_cell_reference(sheet, &format!("{}1", col_str)) {
                     for row in 0..sheet.rows {
@@ -316,8 +317,8 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
             }
         }
 
-        if command.starts_with("COPY ") {
-            let range = &command[5..];
+        if let Some(stripped) = command.strip_prefix("COPY ") {
+            let range = &stripped;
             if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, range) {
                 if copy_range(sheet, start_row, start_col, end_row, end_col) {
                     return Some("Copied to clipboard".to_string());
@@ -329,9 +330,9 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
             }
         }
 
-        if command.starts_with("CUT ") {
+        if let Some(stripped) = command.strip_prefix("CUT ") {
             save_state(sheet);
-            let range = &command[4..];
+            let range = &stripped;
             if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, range) {
                 if cut_range(sheet, start_row, start_col, end_row, end_col) {
                     return Some("Cut to clipboard".to_string());
@@ -343,9 +344,9 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
             }
         }
 
-        if command.starts_with("PASTE ") {
+        if let Some(stripped) = command.strip_prefix("PASTE ") {
             save_state(sheet);
-            let cell_ref = &command[6..];
+            let cell_ref = &stripped;
             if let Some((row, col)) = parse_cell_reference(sheet, cell_ref) {
                 if paste_range(sheet, row, col) {
                     return Some("Pasted from clipboard".to_string());
@@ -377,8 +378,8 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
         }
     }
 
-    if command.starts_with("scroll_to ") {
-        let cell_ref = &command[10..];
+    if let Some(stripped) = command.strip_prefix("scroll_to ") {
+        let cell_ref = &stripped;
         if let Some((row, col)) = parse_cell_reference(sheet, cell_ref) {
             scroll_to_cell(sheet, row, col);
             return None;
@@ -409,7 +410,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                                 } else {
                                     values.sort_by(|a, b| b.1.cmp(&a.1));
                                 }
-                                let mut original_values: Vec<(i32, Option<String>, bool, bool, bool, bool, bool)> = Vec::new();
+                                let mut original_values: Vec<CellAttributes> = Vec::new();
                                 for i in start_row..=end_row {
                                     let cell = &sheet.cells[i as usize][start_col as usize];
                                     original_values.push((
@@ -444,7 +445,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                                 } else {
                                     values.sort_by(|a, b| b.1.cmp(&a.1));
                                 }
-                                let mut original_values: Vec<(i32, Option<String>, bool, bool, bool, bool, bool)> = Vec::new();
+                                let mut original_values: Vec<CellAttributes> = Vec::new();
                                 for j in start_col..=end_col {
                                     let cell = &sheet.cells[start_row as usize][j as usize];
                                     original_values.push((
@@ -690,12 +691,12 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                 }
             }
             update_cell(sheet, row, col, formula);
-            return None;
+             None
         } else {
-            return Some("Invalid cell reference".to_string());
+             Some("Invalid cell reference".to_string())
         }
     } else {
-        return Some("Invalid command format".to_string());
+         Some("Invalid command format".to_string())
     }
 }
 
@@ -788,7 +789,7 @@ pub fn display_graph(sheet: &mut Sheet, graph_type: GraphType, start_row: i32, s
 
     match graph_type {
         GraphType::Bar => {
-            output.push_str(&format!("\nBar Graph for range:\n"));
+            output.push_str("\nBar Graph for range:\n".to_string().as_str());
             for value in (1..=max_val).rev() {
                 output.push_str(&format!("{:2} |", value));
                 for &cell_value in &values {
@@ -809,10 +810,10 @@ pub fn display_graph(sheet: &mut Sheet, graph_type: GraphType, start_row: i32, s
             for label in &labels {
                 output.push_str(&format!("{:^width$}", label, width = column_width));
             }
-            output.push_str("\n");
+            output.push('\n');
         },
         GraphType::Scatter => {
-            output.push_str(&format!("\nScatter Plot for range:\n"));
+            output.push_str("\nScatter Plot for range:\n".to_string().as_str());
             for value in (1..=max_val).rev() {
                 output.push_str(&format!("{:2} |", value));
                 for &cell_value in &values {
@@ -836,7 +837,7 @@ pub fn display_graph(sheet: &mut Sheet, graph_type: GraphType, start_row: i32, s
             for label in &labels {
                 output.push_str(&format!("{:^width$}", label, width = column_width));
             }
-            output.push_str("\n");
+            output.push('\n');
         }
     }
     output

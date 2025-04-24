@@ -1,20 +1,20 @@
-mod types;
-mod sheet;
-mod dependencies;
 mod cell;
+mod dependencies;
+mod sheet;
+mod types;
 mod utils;
 
-use std::io::{self, BufRead, Write};
-use std::time::Instant;
-use crate::types::{SHEET, Sheet};
-use crate::sheet::{create_sheet, process_command, display_sheet};
+use crate::sheet::{create_sheet, display_sheet, process_command};
+use crate::types::{Sheet, SHEET};
 use crate::utils::{encode_column, is_valid_command};
-use std::fs::File;
-use std::path::Path;
-use calamine::{Reader, open_workbook, Xlsx};
-use rocket::{get, post, form::Form, response::Redirect};
+use calamine::{open_workbook, Reader, Xlsx};
+use rocket::{form::Form, get, post, response::Redirect};
 use rocket_dyn_templates::Template;
 use serde_json::json;
+use std::fs::File;
+use std::io::{self, BufRead, Write};
+use std::path::Path;
+use std::time::Instant;
 
 const MAX_ROWS: i32 = 999;
 const MAX_COLS: i32 = 18278;
@@ -40,40 +40,52 @@ fn index(message: Option<String>) -> Template {
         })
         .collect::<Vec<_>>();
 
-    let rows_data = rows.iter().map(|&row| {
-        let cells = (view_col..(view_col + DISPLAY_SIZE).min(sheet.cols))
-            .map(|col| {
-                let cell = &sheet.cells[row as usize][col as usize];
-                let value = if cell.is_error && !cell.has_circular {
-                    "err".to_string()
-                } else {
-                    cell.value.to_string()
-                };
-                let classes = {
-                    let mut c = Vec::new();
-                    if cell.is_bold { c.push("bold"); }
-                    if cell.is_italic { c.push("italic"); }
-                    if cell.is_underline { c.push("underline"); }
-                    c.join(" ")
-                };
-                json!({
-                    "value": value,
-                    "classes": classes,
+    let rows_data = rows
+        .iter()
+        .map(|&row| {
+            let cells = (view_col..(view_col + DISPLAY_SIZE).min(sheet.cols))
+                .map(|col| {
+                    let cell = &sheet.cells[row as usize][col as usize];
+                    let value = if cell.is_error && !cell.has_circular {
+                        "err".to_string()
+                    } else {
+                        cell.value.to_string()
+                    };
+                    let classes = {
+                        let mut c = Vec::new();
+                        if cell.is_bold {
+                            c.push("bold");
+                        }
+                        if cell.is_italic {
+                            c.push("italic");
+                        }
+                        if cell.is_underline {
+                            c.push("underline");
+                        }
+                        c.join(" ")
+                    };
+                    json!({
+                        "value": value,
+                        "classes": classes,
+                    })
                 })
+                .collect::<Vec<_>>();
+            json!({
+                "number": (row + 1).to_string(),
+                "cells": cells,
             })
-            .collect::<Vec<_>>();
-        json!({
-            "number": (row + 1).to_string(),
-            "cells": cells,
         })
-    }).collect::<Vec<_>>();
+        .collect::<Vec<_>>();
 
-    Template::render("index", json!({
-        "columns": columns,
-        "rows": rows_data,
-        "circular_detected": sheet.circular_dependency_detected,
-        "message": message,
-    }))
+    Template::render(
+        "index",
+        json!({
+            "columns": columns,
+            "rows": rows_data,
+            "circular_detected": sheet.circular_dependency_detected,
+            "message": message,
+        }),
+    )
 }
 
 #[post("/command", data = "<form>")]
@@ -111,37 +123,41 @@ fn scroll(direction: String) -> Redirect {
 fn load_csv_file(sheet: &mut Sheet, filename: &str) -> Result<(), String> {
     let file = File::open(filename).map_err(|e| format!("Failed to open CSV file: {}", e))?;
     let reader = io::BufReader::new(file);
-    
+
     let mut formulas = Vec::new();
-    let mut row_idx = 0;
-    for line in reader.lines() {
+    for (row_idx_usize, line) in reader.lines().enumerate() {
+        let row_idx = row_idx_usize as i32;
         if row_idx >= sheet.rows {
-            return Err(format!("CSV file has more rows than the spreadsheet (max: {})", sheet.rows));
+            return Err(format!(
+                "CSV file has more rows than the spreadsheet (max: {})",
+                sheet.rows
+            ));
         }
-        
+
         let line = line.map_err(|e| format!("Error reading CSV line: {}", e))?;
         let values: Vec<&str> = line.split(',').collect();
-        
-        let mut col_idx = 0;
-        for value in values {
+
+        for (col_idx_usize, value) in values.into_iter().enumerate() {
+            let col_idx = col_idx_usize as i32;
             if col_idx >= sheet.cols {
-                return Err(format!("CSV file has more columns than the spreadsheet (max: {})", sheet.cols));
+                return Err(format!(
+                    "CSV file has more columns than the spreadsheet (max: {})",
+                    sheet.cols
+                ));
             }
-            
+
             let value = value.trim();
             if let Ok(num_value) = value.parse::<i32>() {
                 sheet.cells[row_idx as usize][col_idx as usize].value = num_value;
-            } else if value.starts_with('=') {
-                let formula = value[1..].to_string();
+            } else if let Some(stripped) = value.strip_prefix('=') {
+                let formula = stripped.to_string();
                 formulas.push((row_idx, col_idx, formula));
             } else if !value.is_empty() {
                 sheet.cells[row_idx as usize][col_idx as usize].value = 0;
             }
-            col_idx += 1;
         }
-        row_idx += 1;
     }
-    
+
     for (row, col, formula) in formulas {
         crate::cell::update_cell(sheet, row, col, &formula);
     }
@@ -149,52 +165,60 @@ fn load_csv_file(sheet: &mut Sheet, filename: &str) -> Result<(), String> {
 }
 
 fn load_excel_file(sheet: &mut Sheet, filename: &str) -> Result<(), String> {
-    let mut workbook: Xlsx<_> = open_workbook(filename)
-        .map_err(|e| format!("Failed to open Excel file: {}", e))?;
-    
+    let mut workbook: Xlsx<_> =
+        open_workbook(filename).map_err(|e| format!("Failed to open Excel file: {}", e))?;
+
     let sheet_names = workbook.sheet_names().to_vec();
     if sheet_names.is_empty() {
         return Err("Excel file doesn't contain any worksheets".to_string());
     }
-    
-    let worksheet = workbook.worksheet_range(&sheet_names[0])
+
+    let worksheet = workbook
+        .worksheet_range(&sheet_names[0])
         .ok_or_else(|| "Failed to get first worksheet".to_string())?
         .map_err(|e| format!("Error accessing worksheet: {}", e))?;
-    
+
     let height = worksheet.height() as i32;
     let width = worksheet.width() as i32;
-    
+
     if height > sheet.rows {
-        return Err(format!("Excel file has more rows than the spreadsheet (file: {}, max: {})", height, sheet.rows));
+        return Err(format!(
+            "Excel file has more rows than the spreadsheet (file: {}, max: {})",
+            height, sheet.rows
+        ));
     }
-    
+
     if width > sheet.cols {
-        return Err(format!("Excel file has more columns than the spreadsheet (file: {}, max: {})", width, sheet.cols));
+        return Err(format!(
+            "Excel file has more columns than the spreadsheet (file: {}, max: {})",
+            width, sheet.cols
+        ));
     }
-    
+
     for row_idx in 0..height {
         for col_idx in 0..width {
             match worksheet.get_value((
                 (row_idx as usize).try_into().unwrap(),
-                (col_idx as usize).try_into().unwrap()
+                (col_idx as usize).try_into().unwrap(),
             )) {
                 Some(calamine::DataType::Int(value)) => {
                     sheet.cells[row_idx as usize][col_idx as usize].value = *value as i32;
-                },
+                }
                 Some(calamine::DataType::Float(value)) => {
                     sheet.cells[row_idx as usize][col_idx as usize].value = *value as i32;
-                },
+                }
                 Some(calamine::DataType::String(value)) => {
-                    if value.starts_with('=') {
-                        let formula = &value[1..];
+                    if let Some(stripped) = value.strip_prefix('=') {
+                        let formula = &stripped;
                         crate::cell::update_cell(sheet, row_idx, col_idx, formula);
                     } else {
                         sheet.cells[row_idx as usize][col_idx as usize].value = 0;
                     }
-                },
+                }
                 Some(calamine::DataType::Bool(value)) => {
-                    sheet.cells[row_idx as usize][col_idx as usize].value = if *value { 1 } else { 0 };
-                },
+                    sheet.cells[row_idx as usize][col_idx as usize].value =
+                        if *value { 1 } else { 0 };
+                }
                 _ => {
                     sheet.cells[row_idx as usize][col_idx as usize].value = 0;
                 }
@@ -231,7 +255,10 @@ async fn main() -> Result<(), rocket::Error> {
     }
 
     if row_col_args.len() != 2 {
-        println!("Usage: {} [--extension] <rows> <columns> [input_file.csv|xlsx]", args[0]);
+        println!(
+            "Usage: {} [--extension] <rows> <columns> [input_file.csv|xlsx]",
+            args[0]
+        );
         println!("Note: File loading is only available with --extension flag");
         return Ok(());
     }
@@ -239,8 +266,11 @@ async fn main() -> Result<(), rocket::Error> {
     let rows: i32 = row_col_args[0].parse().unwrap_or(0);
     let cols: i32 = row_col_args[1].parse().unwrap_or(0);
 
-    if rows < 1 || rows > MAX_ROWS || cols < 1 || cols > MAX_COLS {
-        println!("Invalid dimensions. Rows: 1-{}, Columns: 1-{}", MAX_ROWS, MAX_COLS);
+    if !(1..=MAX_ROWS).contains(&rows) || !(1..=MAX_COLS).contains(&cols) {
+        println!(
+            "Invalid dimensions. Rows: 1-{}, Columns: 1-{}",
+            MAX_ROWS, MAX_COLS
+        );
         return Ok(());
     }
 
@@ -255,16 +285,16 @@ async fn main() -> Result<(), rocket::Error> {
                         .extension()
                         .and_then(|ext| ext.to_str())
                         .unwrap_or("");
-                    
+
                     let result = match extension.to_lowercase().as_str() {
                         "csv" => load_csv_file(sheet, &filename),
                         "xlsx" => load_excel_file(sheet, &filename),
-                        _ => Err(format!("Unsupported file format: {}", extension))
+                        _ => Err(format!("Unsupported file format: {}", extension)),
                     };
-                    
+
                     match result {
                         Ok(_) => println!("Successfully loaded file: {}", filename),
-                        Err(e) => println!("Error loading file: {}", e)
+                        Err(e) => println!("Error loading file: {}", e),
                     }
                 }
             }
@@ -290,9 +320,25 @@ async fn main() -> Result<(), rocket::Error> {
                 }
             }
 
-            print!("[{:.1}] {}> ", elapsed_time, if is_valid {
-                if SHEET.lock().unwrap().as_ref().unwrap().circular_dependency_detected { "(err)" } else { "(ok)" }
-            } else { "(err)" });
+            print!(
+                "[{:.1}] {}> ",
+                elapsed_time,
+                if is_valid {
+                    if SHEET
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .unwrap()
+                        .circular_dependency_detected
+                    {
+                        "(err)"
+                    } else {
+                        "(ok)"
+                    }
+                } else {
+                    "(err)"
+                }
+            );
             io::stdout().flush().unwrap();
 
             let mut command = String::new();
@@ -304,7 +350,7 @@ async fn main() -> Result<(), rocket::Error> {
             if command == "q" {
                 break;
             }
-            is_valid = is_valid_command(&mut SHEET.lock().unwrap().as_mut().unwrap(), command);
+            is_valid = is_valid_command(SHEET.lock().unwrap().as_mut().unwrap(), command);
             let start = Instant::now();
             let message = {
                 let mut sheet_guard = SHEET.lock().unwrap();

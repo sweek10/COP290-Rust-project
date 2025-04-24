@@ -1,18 +1,18 @@
+use crate::types::{PatternType, Sheet};
 use std::str::FromStr;
-use crate::types::{Sheet, PatternType};
 
 pub fn parse_cell_reference(sheet: &mut Sheet, ref_str: &str) -> Option<(i32, i32)> {
     let ref_str = ref_str.trim();
     let num_start = ref_str.chars().position(|c| c.is_ascii_digit())?;
     let (col_str, row_str) = ref_str.split_at(num_start);
-    
+
     if col_str.is_empty() {
         return None;
     }
-    
+
     let col = decode_column(col_str);
     let row = i32::from_str(row_str).ok()? - 1;
-    
+
     if row >= 0 && row < sheet.rows && col >= 0 && col < sheet.cols {
         Some((row, col))
     } else {
@@ -37,43 +37,56 @@ pub fn calculate_range_function(sheet: &mut Sheet, function: &str, range: &str) 
         None => return Err(()),
     };
 
-    // Collect values into a vector
-    let mut values = Vec::new();
+    let function = function.to_uppercase();
+    let mut count: usize = 0;
+    let mut sum: f64 = 0.0;
+    let mut min: f64 = f64::MAX;
+    let mut max: f64 = f64::MIN;
+    // For STDEV: Welford's online algorithm variables
+    let mut mean: f64 = 0.0;
+    let mut m2: f64 = 0.0;
+
     for i in start_row..=end_row {
         for j in start_col..=end_col {
             let cell = &sheet.cells[i as usize][j as usize];
             if cell.is_error {
                 return Err(());
             }
-            values.push(cell.value as f64);
+            let value = cell.value as f64;
+            count += 1;
+
+            // Update aggregates
+            sum += value;
+            min = min.min(value);
+            max = max.max(value);
+
+            // Welford's algorithm for variance
+            if function == "STDEV" {
+                let delta = value - mean;
+                mean += delta / count as f64;
+                let delta2 = value - mean;
+                m2 += delta * delta2;
+            }
         }
     }
 
-    let count = values.len();
     if count == 0 {
         return Err(());
     }
 
-    match function.to_uppercase().as_str() {
+    match function.as_str() {
+        "SUM" => Ok(sum),
+        "AVG" => Ok(sum / count as f64),
+        "MIN" => Ok(min),
+        "MAX" => Ok(max),
         "STDEV" => {
             if count <= 1 {
-                return Ok(0.0); // Avoid division by zero, as in C code
+                Ok(0.0) // Consistent with original behavior
+            } else {
+                let variance = m2 / count as f64;
+                Ok(variance.sqrt().round())
             }
-
-            // Calculate mean
-            let sum: f64 = values.iter().sum();
-            let mean = sum / count as f64;
-
-            // Calculate variance
-            let variance: f64 = values.iter().map(|&x| (x - mean) * (x - mean)).sum::<f64>() / count as f64;
-
-            // Return standard deviation (rounded, as in C code)
-            Ok(variance.sqrt().round())
         }
-        "MIN" => Ok(values.iter().copied().fold(f64::MAX, f64::min)),
-        "MAX" => Ok(values.iter().copied().fold(f64::MIN, f64::max)),
-        "SUM" => Ok(values.iter().sum()),
-        "AVG" => Ok(values.iter().sum::<f64>() / count as f64),
         _ => Err(()),
     }
 }
@@ -105,7 +118,6 @@ pub fn evaluate_arithmetic(expr: &str, is_error: &mut bool) -> i32 {
     }
     result
 }
-
 pub fn decode_column(col_str: &str) -> i32 {
     let mut result = 0;
     for c in col_str.chars() {
@@ -126,7 +138,11 @@ pub fn encode_column(col: i32, col_str: &mut String) {
 }
 
 pub fn factorial(n: i32) -> i32 {
-    if n <= 1 { 1 } else { n * factorial(n - 1) }
+    if n <= 1 {
+        1
+    } else {
+        n * factorial(n - 1)
+    }
 }
 
 pub fn triangular(n: i32) -> i32 {
@@ -140,24 +156,38 @@ pub fn is_factorial_sequence(values: &[i32]) -> Option<(i32, i32)> {
     }
 
     let first_value = forward_values[0];
-    let mut start_n = 0;
-    while factorial(start_n) < first_value {
-        start_n += 1;
-    }
-    if factorial(start_n) != first_value {
-        return None;
-    }
+    let mut possible_start_n = vec![];
 
-    for (i, &val) in forward_values.iter().enumerate() {
-        let n = start_n + i as i32;
-        if val != factorial(n) {
-            return None;
+    // Find all possible start_n where factorial(start_n) == first_value
+    let mut start_n = 0;
+    while factorial(start_n) <= first_value {
+        if factorial(start_n) == first_value {
+            possible_start_n.push(start_n);
+        }
+        start_n += 1;
+        if start_n > 20 { // Prevent excessive computation
+            break;
         }
     }
 
-    let last_value = forward_values.last().unwrap();
-    let next_index = start_n + forward_values.len() as i32;
-    Some((*last_value, next_index))
+    // Try each possible start_n to find a matching sequence
+    for start_n in possible_start_n {
+        let mut is_valid = true;
+        for (i, &val) in forward_values.iter().enumerate() {
+            let n = start_n + i as i32;
+            if val != factorial(n) {
+                is_valid = false;
+                break;
+            }
+        }
+        if is_valid {
+            let last_value = *forward_values.last().unwrap();
+            let next_index = start_n + forward_values.len() as i32;
+            return Some((last_value, next_index));
+        }
+    }
+
+    None
 }
 
 pub fn is_triangular_sequence(values: &[i32]) -> Option<(i32, i32)> {
@@ -187,7 +217,13 @@ pub fn is_triangular_sequence(values: &[i32]) -> Option<(i32, i32)> {
     Some((*last_value, next_index))
 }
 
-pub fn detect_pattern(sheet: &Sheet, start_row: i32, start_col: i32, end_row: i32, end_col: i32) -> PatternType {
+pub fn detect_pattern(
+    sheet: &Sheet,
+    start_row: i32,
+    start_col: i32,
+    end_row: i32,
+    end_col: i32,
+) -> PatternType {
     let mut values = Vec::new();
 
     if start_row == end_row {
@@ -212,7 +248,7 @@ pub fn detect_pattern(sheet: &Sheet, start_row: i32, start_col: i32, end_row: i3
 
     if values.len() >= 2 {
         let diffs: Vec<i32> = values.windows(2).map(|w| w[1] - w[0]).collect();
-        if diffs.len() >= 1 && diffs.iter().all(|&d| d == diffs[0]) {
+        if diffs.iter().all(|&d| d == diffs[0]) {
             return PatternType::Arithmetic(values[0], diffs[0]);
         }
     }
@@ -233,16 +269,26 @@ pub fn detect_pattern(sheet: &Sheet, start_row: i32, start_col: i32, end_row: i3
         let forward_values: Vec<i32> = values.clone().into_iter().rev().collect();
         let is_fibonacci = forward_values.windows(3).all(|w| w[2] == w[0] + w[1]);
         if is_fibonacci {
-            return PatternType::Fibonacci(forward_values[forward_values.len() - 2], forward_values[forward_values.len() - 1]);
+            return PatternType::Fibonacci(
+                forward_values[forward_values.len() - 2],
+                forward_values[forward_values.len() - 1],
+            );
         }
     }
 
     if values.len() >= 2 {
         let forward_values: Vec<i32> = values.clone().into_iter().rev().collect();
-        let ratios: Vec<f64> = forward_values.windows(2)
-            .map(|w| if w[0] == 0 { f64::INFINITY } else { w[1] as f64 / w[0] as f64 })
+        let ratios: Vec<f64> = forward_values
+            .windows(2)
+            .map(|w| {
+                if w[0] == 0 {
+                    f64::INFINITY
+                } else {
+                    w[1] as f64 / w[0] as f64
+                }
+            })
             .collect();
-        if ratios.len() >= 1 && ratios.iter().all(|&r| (r - ratios[0]).abs() < 1e-10) && ratios[0].is_finite() {
+        if ratios.iter().all(|&r| (r - ratios[0]).abs() < 1e-10) && ratios[0].is_finite() {
             return PatternType::Geometric(forward_values[0], ratios[0]);
         }
     }
@@ -261,7 +307,8 @@ pub fn is_valid_formula(sheet: &mut Sheet, formula: &str) -> bool {
                         return parse_range(sheet, args.trim()).is_some();
                     }
                     "SLEEP" => {
-                        return args.parse::<i32>().is_ok() || parse_cell_reference(sheet, args.trim()).is_some();
+                        return args.parse::<i32>().is_ok()
+                            || parse_cell_reference(sheet, args.trim()).is_some();
                     }
                     "BOLD" | "ITALIC" | "UNDERLINE" => {
                         return parse_cell_reference(sheet, args.trim()).is_some();
@@ -270,26 +317,29 @@ pub fn is_valid_formula(sheet: &mut Sheet, formula: &str) -> bool {
                 }
             }
         }
-    } else {
-        if let Some((func_name, args)) = formula.split_once('(') {
-            if let Some(args) = args.strip_suffix(')') {
-                let func_name = func_name.trim().to_uppercase();
-                match func_name.as_str() {
-                    "SUM" | "AVG" | "MAX" | "MIN" | "STDEV" => {
-                        return parse_range(sheet, args.trim()).is_some();
-                    }
-                    "SLEEP" => {
-                        return args.parse::<i32>().is_ok() || parse_cell_reference(sheet, args.trim()).is_some();
-                    }
-                    _ => return false,
+    } else if let Some((func_name, args)) = formula.split_once('(') {
+        if let Some(args) = args.strip_suffix(')') {
+            let func_name = func_name.trim().to_uppercase();
+            match func_name.as_str() {
+                "SUM" | "AVG" | "MAX" | "MIN" | "STDEV" => {
+                    return parse_range(sheet, args.trim()).is_some();
                 }
+                "SLEEP" => {
+                    return args.parse::<i32>().is_ok()
+                        || parse_cell_reference(sheet, args.trim()).is_some();
+                }
+                _ => return false,
             }
         }
     }
 
-    if formula.contains('+') || formula.contains('-') || 
-       formula.contains('*') || formula.contains('/') {
-        let parts: Vec<&str> = formula.split(|c| "+-*/".contains(c))
+    if formula.contains('+')
+        || formula.contains('-')
+        || formula.contains('*')
+        || formula.contains('/')
+    {
+        let parts: Vec<&str> = formula
+            .split(|c| "+-*/".contains(c))
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
             .collect();
@@ -311,40 +361,59 @@ pub fn is_valid_command(sheet: &mut Sheet, command: &str) -> bool {
     if sheet.extension_enabled && (command == "undo" || command == "redo") {
         return true;
     }
-    if sheet.extension_enabled && command.starts_with("FORMULA ") {
-        return parse_cell_reference(sheet, &command[8..].trim()).is_some();
+    if sheet.extension_enabled {
+        if let Some(stripped) = command.strip_prefix("FORMULA ") {
+            return parse_cell_reference(sheet, stripped.trim()).is_some();
+        }
     }
-    if sheet.extension_enabled && command.starts_with("ROWDEL ") {
-        let row_str = &command[7..].trim();
-        return row_str.parse::<i32>().map_or(false, |r| r >= 1 && r <= sheet.rows);
+    if sheet.extension_enabled {
+        if let Some(stripped) = command.strip_prefix("ROWDEL ") {
+            return stripped
+                .trim()
+                .parse::<i32>()
+                .is_ok_and(|r| r >= 1 && r <= sheet.rows);
+        }
     }
-    if sheet.extension_enabled && command.starts_with("COLDEL ") {
-        let col_str = &command[7..].trim();
-        return col_str.chars().all(|c| c.is_ascii_alphabetic());
+    if sheet.extension_enabled {
+        if let Some(stripped) = command.strip_prefix("COLDEL ") {
+            return stripped.trim().chars().all(|c| c.is_ascii_alphabetic());
+        }
     }
-    if command.starts_with("scroll_to ") {
-        return parse_cell_reference(sheet, &command[10..]).is_some();
+    if let Some(stripped) = command.strip_prefix("scroll_to ") {
+        return parse_cell_reference(sheet, stripped).is_some();
     }
     if sheet.extension_enabled && command.starts_with("GRAPH ") {
         let parts: Vec<&str> = command.split_whitespace().collect();
-        return parts.len() == 3 && 
-               ["(BAR)", "(SCATTER)"].contains(&parts[1].to_uppercase().as_str()) && 
-               parse_range(sheet, parts[2]).is_some();
+        return parts.len() == 3
+            && ["(BAR)", "(SCATTER)"].contains(&parts[1].to_uppercase().as_str())
+            && parse_range(sheet, parts[2]).is_some();
     }
-    if sheet.extension_enabled && (command.starts_with("COPY ") || command.starts_with("COPY")) {
-        let range = if command.starts_with("COPY ") { &command[5..] } else { &command[4..] };
+    if sheet.extension_enabled {
+        let range = if let Some(stripped) = command.strip_prefix("COPY ") {
+            stripped
+        } else {
+            &command[4..]
+        };
         return parse_range(sheet, range).is_some();
     }
-    if sheet.extension_enabled && (command.starts_with("CUT ") || command.starts_with("CUT")) {
-        let range = if command.starts_with("CUT ") { &command[4..] } else { &command[3..] };
+    if sheet.extension_enabled {
+        let range = if let Some(stripped) = command.strip_prefix("CUT ") {
+            stripped
+        } else {
+            &command[3..]
+        };
         return parse_range(sheet, range).is_some();
     }
-    if sheet.extension_enabled && (command.starts_with("PASTE ") || command.starts_with("PASTE")) {
-        let cell_ref = if command.starts_with("PASTE ") { &command[6..] } else { &command[5..] };
+    if sheet.extension_enabled {
+        let cell_ref = if let Some(stripped) = command.strip_prefix("PASTE ") {
+            stripped
+        } else {
+            &command[5..]
+        };
         return parse_cell_reference(sheet, cell_ref).is_some();
     }
-    
-    command.split_once('=').map_or(false, |(ref_str, formula)| {
-        parse_cell_reference(sheet, ref_str.trim()).is_some() && is_valid_formula(sheet, formula.trim())
+    command.split_once('=').is_some_and(|(ref_str, formula)| {
+        parse_cell_reference(sheet, ref_str.trim()).is_some()
+            && is_valid_formula(sheet, formula.trim())
     })
 }

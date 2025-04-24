@@ -1,12 +1,20 @@
+use crate::dependencies::{has_circular_dependency, recalculate_dependents};
+use crate::types::CellDependencies;
+use crate::types::{DependencyType, Sheet};
+use crate::utils::{
+    calculate_range_function, evaluate_arithmetic, is_valid_formula, parse_cell_reference,
+    parse_range,
+};
 use std::thread::sleep;
 use std::time::Duration;
-use crate::types::{Sheet, DependencyType};
-use crate::dependencies::{has_circular_dependency, remove_dependency, recalculate_dependents};
-use crate::utils::{parse_cell_reference, parse_range, calculate_range_function, evaluate_arithmetic, is_valid_formula};
-use crate::types::CellDependencies;
 
 pub fn update_cell(sheet: &mut Sheet, row: i32, col: i32, formula: &str) {
-    if row < 0 || row >= sheet.rows || col < 0 || col >= sheet.cols || !is_valid_formula(sheet, formula) {
+    if row < 0
+        || row >= sheet.rows
+        || col < 0
+        || col >= sheet.cols
+        || !is_valid_formula(sheet, formula)
+    {
         return;
     }
 
@@ -21,7 +29,9 @@ pub fn update_cell(sheet: &mut Sheet, row: i32, col: i32, formula: &str) {
 
     // Parse new dependencies
     let mut new_dependencies = Vec::new();
-    let tokens: Vec<&str> = formula.split(&['+', '-', '*', '/', '(', ')', ' '][..]).collect();
+    let tokens: Vec<&str> = formula
+        .split(&['+', '-', '*', '/', '(', ')', ' '][..])
+        .collect();
     for token in tokens {
         if token.contains(':') {
             if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, token) {
@@ -32,9 +42,12 @@ pub fn update_cell(sheet: &mut Sheet, row: i32, col: i32, formula: &str) {
                     end_col,
                 });
             }
-        } else if token.chars().next().map_or(false, |c| c.is_alphabetic()) {
+        } else if token.chars().next().is_some_and(|c| c.is_alphabetic()) {
             if let Some((dep_row, dep_col)) = parse_cell_reference(sheet, token) {
-                new_dependencies.push(DependencyType::Single { row: dep_row, col: dep_col });
+                new_dependencies.push(DependencyType::Single {
+                    row: dep_row,
+                    col: dep_col,
+                });
             }
         }
     }
@@ -64,7 +77,7 @@ pub fn update_cell(sheet: &mut Sheet, row: i32, col: i32, formula: &str) {
     }
 
     // Create new cell dependencies, preserving existing dependents if any
-    let mut new_cell_deps = CellDependencies {
+    let new_cell_deps = CellDependencies {
         dependencies: new_dependencies.clone(),
         dependents: old_cell_deps.map_or(Vec::new(), |d| d.dependents),
     };
@@ -72,9 +85,17 @@ pub fn update_cell(sheet: &mut Sheet, row: i32, col: i32, formula: &str) {
     // Add this cell to dependents of new Single dependencies
     for dep in &new_cell_deps.dependencies {
         if let DependencyType::Single { row: r, col: c } = dep {
-            let dep_cell_deps = sheet.dependency_graph.entry((*r, *c))
-                .or_insert_with(|| CellDependencies { dependencies: Vec::new(), dependents: Vec::new() });
-            dep_cell_deps.dependents.push(DependencyType::Single { row, col });
+            let dep_cell_deps =
+                sheet
+                    .dependency_graph
+                    .entry((*r, *c))
+                    .or_insert_with(|| CellDependencies {
+                        dependencies: Vec::new(),
+                        dependents: Vec::new(),
+                    });
+            dep_cell_deps
+                .dependents
+                .push(DependencyType::Single { row, col });
         }
         // Range dependencies will be detected dynamically in BFS
     }
@@ -89,8 +110,8 @@ pub fn update_cell(sheet: &mut Sheet, row: i32, col: i32, formula: &str) {
 
     recalculate_dependents(sheet, row, col);
     crate::dependencies::reset_circular_dependency_flag(sheet);
-} 
-pub fn evaluate_expression(sheet: &mut Sheet, expr: &str, row: i32, col: i32) -> (i32, bool) {
+}
+pub fn evaluate_expression(sheet: &mut Sheet, expr: &str, _row: i32, _col: i32) -> (i32, bool) {
     let mut is_error = false;
 
     // Handle numeric literals
@@ -99,7 +120,9 @@ pub fn evaluate_expression(sheet: &mut Sheet, expr: &str, row: i32, col: i32) ->
     }
 
     // Handle single cell reference
-    if expr.chars().next().map_or(false, |c| c.is_alphabetic()) && !expr.contains(&['+', '-', '*', '/', '('][..]) {
+    if expr.chars().next().is_some_and(|c| c.is_alphabetic())
+        && !expr.contains(&['+', '-', '*', '/', '('][..])
+    {
         if let Some((r, c)) = parse_cell_reference(sheet, expr) {
             let cell = &sheet.cells[r as usize][c as usize];
             return (cell.value, cell.is_error);
@@ -107,17 +130,17 @@ pub fn evaluate_expression(sheet: &mut Sheet, expr: &str, row: i32, col: i32) ->
     }
 
     // Handle functions like SLEEP, SUM, AVG, etc.
-    if let Some((function, args)) = expr.split_once('(').map(|(f, a)| (f, &a[..a.len()-1])) {
+    if let Some((function, args)) = expr.split_once('(').map(|(f, a)| (f, &a[..a.len() - 1])) {
         let function = function.trim().to_uppercase();
         if function == "SLEEP" {
-            let (duration, error) = evaluate_expression(sheet, args, row, col);
+            let (duration, error) = evaluate_expression(sheet, args, _row, _col);
             if error {
                 return (0, true);
             }
             sleep(Duration::from_secs(duration as u64));
             return (duration, false);
         }
-        
+
         if parse_range(sheet, args).is_some() {
             match calculate_range_function(sheet, &function, args) {
                 Ok(result) => {
@@ -138,7 +161,12 @@ pub fn evaluate_expression(sheet: &mut Sheet, expr: &str, row: i32, col: i32) ->
         let c = expr.chars().nth(pos).unwrap();
         if c.is_alphabetic() {
             let mut token_end = pos;
-            while token_end < expr.len() && expr.chars().nth(token_end).map_or(false, |c| c.is_alphanumeric()) {
+            while token_end < expr.len()
+                && expr
+                    .chars()
+                    .nth(token_end)
+                    .is_some_and(|c| c.is_alphanumeric())
+            {
                 token_end += 1;
             }
             let token = &expr[pos..token_end];
@@ -152,16 +180,18 @@ pub fn evaluate_expression(sheet: &mut Sheet, expr: &str, row: i32, col: i32) ->
                 return (0, true); // Invalid cell reference
             }
             pos = token_end;
-        } else if c.is_digit(10) {
+        } else if c.is_ascii_digit() {
             let mut token_end = pos;
-            while token_end < expr.len() && expr.chars().nth(token_end).unwrap().is_digit(10) {
+            while token_end < expr.len() && expr.chars().nth(token_end).unwrap().is_ascii_digit() {
                 token_end += 1;
             }
             final_expr.push_str(&expr[pos..token_end]);
             pos = token_end;
-        } else if c == '-' && (pos == 0 || "+-*/(".contains(expr.chars().nth(pos-1).unwrap_or(' '))) {
+        } else if c == '-'
+            && (pos == 0 || "+-*/(".contains(expr.chars().nth(pos - 1).unwrap_or(' ')))
+        {
             let mut token_end = pos + 1;
-            while token_end < expr.len() && expr.chars().nth(token_end).unwrap().is_digit(10) {
+            while token_end < expr.len() && expr.chars().nth(token_end).unwrap().is_ascii_digit() {
                 token_end += 1;
             }
             final_expr.push_str(&expr[pos..token_end]);

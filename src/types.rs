@@ -1,16 +1,24 @@
-use std::sync::Mutex;
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 #[derive(Clone, Debug)]
 pub enum DependencyType {
-    Single { row: i32, col: i32 },
-    Range { start_row: i32, start_col: i32, end_row: i32, end_col: i32 },
+    Single {
+        row: i32,
+        col: i32,
+    },
+    Range {
+        start_row: i32,
+        start_col: i32,
+        end_row: i32,
+        end_col: i32,
+    },
 }
 
 #[derive(Clone, Debug)]
 pub struct CellDependencies {
     pub dependencies: Vec<DependencyType>, // Cells this cell depends on
-    pub dependents: Vec<DependencyType>,  // Cells that depend on this cell
+    pub dependents: Vec<DependencyType>,   // Cells that depend on this cell
 }
 
 #[derive(Debug)]
