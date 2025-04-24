@@ -1,13 +1,16 @@
-use std::io::{self, Write};
-use crate::types::{Sheet, Cell, PatternType, GraphType, Clipboard, CLIPBOARD, DependencyType, SheetState};
-use crate::utils::{encode_column, parse_cell_reference, parse_range, detect_pattern, factorial, triangular};
 use crate::cell::update_cell;
-use std::collections::HashMap;
 use crate::dependencies::remove_dependency;
+use crate::types::{
+    Cell, Clipboard, DependencyType, GraphType, PatternType, Sheet, SheetState, CLIPBOARD,
+};
+use crate::utils::{
+    detect_pattern, encode_column, factorial, parse_cell_reference, parse_range, triangular,
+};
+use std::collections::HashMap;
+use std::io::{self, Write};
 
 const DISPLAY_SIZE: i32 = 10;
 type CellAttributes = (i32, Option<String>, bool, bool, bool, bool, bool);
-
 
 pub fn create_sheet(rows: i32, cols: i32, extension_enabled: bool) -> Option<Sheet> {
     let mut cells = Vec::with_capacity(rows as usize);
@@ -46,7 +49,10 @@ pub fn scroll_sheet(sheet: &mut Sheet, direction: char) {
         's' => {
             if sheet.view_row + DISPLAY_SIZE < sheet.rows && sheet.view_row + 20 <= sheet.rows {
                 sheet.view_row += DISPLAY_SIZE;
-            } else if sheet.view_row + DISPLAY_SIZE < sheet.rows && sheet.view_row + 10 <= sheet.rows && sheet.view_row + 20 > sheet.rows {
+            } else if sheet.view_row + DISPLAY_SIZE < sheet.rows
+                && sheet.view_row + 10 <= sheet.rows
+                && sheet.view_row + 20 > sheet.rows
+            {
                 sheet.view_row += sheet.rows - sheet.view_row - 10;
             }
         }
@@ -60,7 +66,10 @@ pub fn scroll_sheet(sheet: &mut Sheet, direction: char) {
         'd' => {
             if sheet.view_col + DISPLAY_SIZE < sheet.cols && sheet.view_col + 20 <= sheet.cols {
                 sheet.view_col += DISPLAY_SIZE;
-            } else if sheet.view_col + DISPLAY_SIZE < sheet.cols && sheet.view_col + 10 <= sheet.cols && sheet.view_col + 20 > sheet.cols {
+            } else if sheet.view_col + DISPLAY_SIZE < sheet.cols
+                && sheet.view_col + 10 <= sheet.cols
+                && sheet.view_col + 20 > sheet.cols
+            {
                 sheet.view_col += sheet.cols - sheet.view_col - 10;
             }
         }
@@ -78,10 +87,10 @@ pub fn scroll_to_cell(sheet: &mut Sheet, row: i32, col: i32) {
 }
 
 // pub fn add_to_history(sheet: &mut Sheet, command: &str) {
-//     if command.len() == 1 && "wasd".contains(command) || 
-//        command == "undo" || 
+//     if command.len() == 1 && "wasd".contains(command) ||
+//        command == "undo" ||
 //        command == "redo" ||
-//        command == "disable_output" || 
+//        command == "disable_output" ||
 //        command == "enable_output" ||
 //        command.starts_with("scroll_to ") ||
 //        command.contains("AUTOFILL") {
@@ -107,16 +116,16 @@ pub fn save_state(sheet: &mut Sheet) {
 
     // Clear redo stack when a new action is performed
     sheet.redo_stack.clear();
-    
+
     // Create a snapshot of the current state
     let state = SheetState {
         cells: sheet.cells.clone(),
         dependency_graph: sheet.dependency_graph.clone(),
     };
-    
+
     // Add to undo stack
     sheet.undo_stack.push(state);
-    
+
     // Maintain history size limit
     if sheet.undo_stack.len() > sheet.max_history_size {
         sheet.undo_stack.remove(0);
@@ -134,14 +143,14 @@ pub fn undo(sheet: &mut Sheet) -> bool {
         dependency_graph: sheet.dependency_graph.clone(),
     };
     sheet.redo_stack.push(current_state);
-    
+
     // Get the previous state
     let previous_state = sheet.undo_stack.pop().unwrap();
-    
+
     // Restore the sheet to the previous state
     sheet.cells = previous_state.cells;
     sheet.dependency_graph = previous_state.dependency_graph;
-    
+
     true
 }
 
@@ -156,14 +165,14 @@ pub fn redo(sheet: &mut Sheet) -> bool {
         dependency_graph: sheet.dependency_graph.clone(),
     };
     sheet.undo_stack.push(current_state);
-    
+
     // Get the next state
     let next_state = sheet.redo_stack.pop().unwrap();
-    
+
     // Restore the sheet to the next state
     sheet.cells = next_state.cells;
     sheet.dependency_graph = next_state.dependency_graph;
-    
+
     true
 }
 
@@ -174,10 +183,22 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
 
     if command.len() == 1 {
         match command.chars().next().unwrap() {
-            'w' => { scroll_sheet(sheet, 'w'); return None; }
-            'a' => { scroll_sheet(sheet, 'a'); return None; }
-            's' => { scroll_sheet(sheet, 's'); return None; }
-            'd' => { scroll_sheet(sheet, 'd'); return None; }
+            'w' => {
+                scroll_sheet(sheet, 'w');
+                return None;
+            }
+            'a' => {
+                scroll_sheet(sheet, 'a');
+                return None;
+            }
+            's' => {
+                scroll_sheet(sheet, 's');
+                return None;
+            }
+            'd' => {
+                scroll_sheet(sheet, 'd');
+                return None;
+            }
             'q' => std::process::exit(0),
             _ => return Some("Invalid single-character command".to_string()),
         }
@@ -226,7 +247,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
             if let Ok(row) = row_str.parse::<i32>() {
                 if row >= 1 && row <= sheet.rows {
                     for col in 0..sheet.cols {
-                        let cell = &mut sheet.cells[(row-1) as usize][col as usize];
+                        let cell = &mut sheet.cells[(row - 1) as usize][col as usize];
                         cell.value = 0;
                         cell.formula = None;
                         cell.is_formula = false;
@@ -234,16 +255,21 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                         cell.is_bold = false;
                         cell.is_italic = false;
                         cell.is_underline = false;
-                        if let Some(cell_deps) = sheet.dependency_graph.remove(&((row-1), col)) {
+                        if let Some(cell_deps) = sheet.dependency_graph.remove(&((row - 1), col)) {
                             for dep in cell_deps.dependencies {
                                 match dep {
                                     DependencyType::Single { row: r, col: c } => {
-                                        remove_dependency(sheet, r, c, row-1, col, true);
+                                        remove_dependency(sheet, r, c, row - 1, col, true);
                                     }
-                                    DependencyType::Range { start_row, start_col, end_row, end_col } => {
+                                    DependencyType::Range {
+                                        start_row,
+                                        start_col,
+                                        end_row,
+                                        end_col,
+                                    } => {
                                         for i in start_row..=end_row {
                                             for j in start_col..=end_col {
-                                                remove_dependency(sheet, i, j, row-1, col, true);
+                                                remove_dependency(sheet, i, j, row - 1, col, true);
                                             }
                                         }
                                     }
@@ -252,14 +278,14 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                             for dep in cell_deps.dependents {
                                 match dep {
                                     DependencyType::Single { row: r, col: c } => {
-                                        remove_dependency(sheet, r, c, row-1, col, false);
+                                        remove_dependency(sheet, r, c, row - 1, col, false);
                                     }
                                     DependencyType::Range { .. } => {}
                                 }
                             }
                         }
                     }
-                    
+
                     return None;
                 } else {
                     return Some(format!("Invalid row number: {}", row));
@@ -269,7 +295,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
             }
         }
 
-        if let Some(stripped) = command.strip_prefix("COLDEL"){
+        if let Some(stripped) = command.strip_prefix("COLDEL") {
             save_state(sheet);
             let col_str = &stripped.trim();
             if !col_str.is_empty() && col_str.chars().all(|c| c.is_ascii_alphabetic()) {
@@ -289,7 +315,12 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                                     DependencyType::Single { row: r, col: c } => {
                                         remove_dependency(sheet, r, c, row, col, true);
                                     }
-                                    DependencyType::Range { start_row, start_col, end_row, end_col } => {
+                                    DependencyType::Range {
+                                        start_row,
+                                        start_col,
+                                        end_row,
+                                        end_col,
+                                    } => {
                                         for i in start_row..=end_row {
                                             for j in start_col..=end_col {
                                                 remove_dependency(sheet, i, j, row, col, true);
@@ -366,8 +397,10 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                     "(SCATTER)" => GraphType::Scatter,
                     _ => return Some("Invalid graph type. Use (BAR) or (SCATTER)".to_string()),
                 };
-                if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, parts[2]) {
-                    let graph_output = display_graph(sheet, graph_type, start_row, start_col, end_row, end_col);
+                if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, parts[2])
+                {
+                    let graph_output =
+                        display_graph(sheet, graph_type, start_row, start_col, end_row, end_col);
                     return Some(graph_output);
                 } else {
                     return Some("Invalid range for graph".to_string());
@@ -398,12 +431,19 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
             if let Some((func_name, args)) = formula.split_once('(') {
                 if let Some(range_arg) = args.strip_suffix(')') {
                     let range_arg = range_arg.trim();
-                    if func_name.trim().to_uppercase() == "SORTA" || func_name.trim().to_uppercase() == "SORTD" {
-                        if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, range_arg) {
+                    if func_name.trim().to_uppercase() == "SORTA"
+                        || func_name.trim().to_uppercase() == "SORTD"
+                    {
+                        if let Some((start_row, start_col, end_row, end_col)) =
+                            parse_range(sheet, range_arg)
+                        {
                             if start_col == end_col {
                                 let mut values: Vec<(i32, i32)> = Vec::new();
                                 for i in start_row..=end_row {
-                                    values.push((i, sheet.cells[i as usize][start_col as usize].value));
+                                    values.push((
+                                        i,
+                                        sheet.cells[i as usize][start_col as usize].value,
+                                    ));
                                 }
                                 if func_name.trim().to_uppercase() == "SORTA" {
                                     values.sort_by(|a, b| a.1.cmp(&b.1));
@@ -420,7 +460,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                                         cell.is_error,
                                         cell.is_bold,
                                         cell.is_italic,
-                                        cell.is_underline
+                                        cell.is_underline,
                                     ));
                                 }
                                 for (idx, (orig_row, value)) in values.iter().enumerate() {
@@ -438,7 +478,10 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                             } else if start_row == end_row {
                                 let mut values: Vec<(i32, i32)> = Vec::new();
                                 for j in start_col..=end_col {
-                                    values.push((j, sheet.cells[start_row as usize][j as usize].value));
+                                    values.push((
+                                        j,
+                                        sheet.cells[start_row as usize][j as usize].value,
+                                    ));
                                 }
                                 if func_name.trim().to_uppercase() == "SORTA" {
                                     values.sort_by(|a, b| a.1.cmp(&b.1));
@@ -455,7 +498,7 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                                         cell.is_error,
                                         cell.is_bold,
                                         cell.is_italic,
-                                        cell.is_underline
+                                        cell.is_underline,
                                     ));
                                 }
                                 for (idx, (orig_col, value)) in values.iter().enumerate() {
@@ -502,7 +545,9 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                         }
                     } else if func_name.trim().to_uppercase() == "AUTOFILL" {
                         save_state(sheet);
-                        if let Some((start_row, start_col, end_row, end_col)) = parse_range(sheet, range_arg) {
+                        if let Some((start_row, start_col, end_row, end_col)) =
+                            parse_range(sheet, range_arg)
+                        {
                             if start_col != end_col && start_row != end_row {
                                 return None;
                             }
@@ -514,11 +559,13 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                                 if values.is_empty() {
                                     return None;
                                 }
-                                let pattern = detect_pattern(sheet, start_row, start_col, end_row, end_col);
+                                let pattern =
+                                    detect_pattern(sheet, start_row, start_col, end_row, end_col);
                                 match pattern {
                                     PatternType::Constant(value) => {
                                         for i in start_row..=end_row {
-                                            let cell = &mut sheet.cells[i as usize][start_col as usize];
+                                            let cell =
+                                                &mut sheet.cells[i as usize][start_col as usize];
                                             cell.value = value;
                                             cell.formula = None;
                                             cell.is_formula = false;
@@ -530,7 +577,8 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                                         for i in start_row..=end_row {
                                             let offset = i - (start_row - 1);
                                             let new_value = last_value - diff * offset;
-                                            let cell = &mut sheet.cells[i as usize][start_col as usize];
+                                            let cell =
+                                                &mut sheet.cells[i as usize][start_col as usize];
                                             cell.value = new_value;
                                             cell.formula = None;
                                             cell.is_formula = false;
@@ -540,7 +588,8 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                                     PatternType::Fibonacci(mut penult, mut last) => {
                                         for i in start_row..=end_row {
                                             let new_value = penult + last;
-                                            let cell = &mut sheet.cells[i as usize][start_col as usize];
+                                            let cell =
+                                                &mut sheet.cells[i as usize][start_col as usize];
                                             cell.value = new_value;
                                             cell.formula = None;
                                             cell.is_formula = false;
@@ -553,8 +602,11 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                                         let last_value = values[0];
                                         for i in start_row..=end_row {
                                             let offset = i - (start_row - 1);
-                                            let new_value = (last_value as f64 * ratio.powi(offset)).round() as i32;
-                                            let cell = &mut sheet.cells[i as usize][start_col as usize];
+                                            let new_value = (last_value as f64 * ratio.powi(offset))
+                                                .round()
+                                                as i32;
+                                            let cell =
+                                                &mut sheet.cells[i as usize][start_col as usize];
                                             cell.value = new_value;
                                             cell.formula = None;
                                             cell.is_formula = false;
@@ -564,7 +616,8 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                                     PatternType::Factorial(_last_value, mut next_index) => {
                                         for i in start_row..=end_row {
                                             let new_value = factorial(next_index);
-                                            let cell = &mut sheet.cells[i as usize][start_col as usize];
+                                            let cell =
+                                                &mut sheet.cells[i as usize][start_col as usize];
                                             cell.value = new_value;
                                             cell.formula = None;
                                             cell.is_formula = false;
@@ -575,7 +628,8 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                                     PatternType::Triangular(_last_value, mut next_index) => {
                                         for i in start_row..=end_row {
                                             let new_value = triangular(next_index);
-                                            let cell = &mut sheet.cells[i as usize][start_col as usize];
+                                            let cell =
+                                                &mut sheet.cells[i as usize][start_col as usize];
                                             cell.value = new_value;
                                             cell.formula = None;
                                             cell.is_formula = false;
@@ -593,11 +647,13 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                                 if values.is_empty() {
                                     return None;
                                 }
-                                let pattern = detect_pattern(sheet, start_row, start_col, end_row, end_col);
+                                let pattern =
+                                    detect_pattern(sheet, start_row, start_col, end_row, end_col);
                                 match pattern {
                                     PatternType::Constant(value) => {
                                         for j in start_col..=end_col {
-                                            let cell = &mut sheet.cells[start_row as usize][j as usize];
+                                            let cell =
+                                                &mut sheet.cells[start_row as usize][j as usize];
                                             cell.value = value;
                                             cell.formula = None;
                                             cell.is_formula = false;
@@ -609,7 +665,8 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                                         for j in start_col..=end_col {
                                             let offset = j - (start_col - 1);
                                             let new_value = last_value - diff * offset;
-                                            let cell = &mut sheet.cells[start_row as usize][j as usize];
+                                            let cell =
+                                                &mut sheet.cells[start_row as usize][j as usize];
                                             cell.value = new_value;
                                             cell.formula = None;
                                             cell.is_formula = false;
@@ -619,7 +676,8 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                                     PatternType::Fibonacci(mut penult, mut last) => {
                                         for j in start_col..=end_col {
                                             let new_value = penult + last;
-                                            let cell = &mut sheet.cells[start_row as usize][j as usize];
+                                            let cell =
+                                                &mut sheet.cells[start_row as usize][j as usize];
                                             cell.value = new_value;
                                             cell.formula = None;
                                             cell.is_formula = false;
@@ -632,8 +690,11 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                                         let last_value = values[0];
                                         for j in start_col..=end_col {
                                             let offset = j - (start_col - 1);
-                                            let new_value = (last_value as f64 * ratio.powi(offset)).round() as i32;
-                                            let cell = &mut sheet.cells[start_row as usize][j as usize];
+                                            let new_value = (last_value as f64 * ratio.powi(offset))
+                                                .round()
+                                                as i32;
+                                            let cell =
+                                                &mut sheet.cells[start_row as usize][j as usize];
                                             cell.value = new_value;
                                             cell.formula = None;
                                             cell.is_formula = false;
@@ -643,7 +704,8 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                                     PatternType::Factorial(_last_value, mut next_index) => {
                                         for j in start_col..=end_col {
                                             let new_value = factorial(next_index);
-                                            let cell = &mut sheet.cells[start_row as usize][j as usize];
+                                            let cell =
+                                                &mut sheet.cells[start_row as usize][j as usize];
                                             cell.value = new_value;
                                             cell.formula = None;
                                             cell.is_formula = false;
@@ -654,7 +716,8 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                                     PatternType::Triangular(_last_value, mut next_index) => {
                                         for j in start_col..=end_col {
                                             let new_value = triangular(next_index);
-                                            let cell = &mut sheet.cells[start_row as usize][j as usize];
+                                            let cell =
+                                                &mut sheet.cells[start_row as usize][j as usize];
                                             cell.value = new_value;
                                             cell.formula = None;
                                             cell.is_formula = false;
@@ -691,12 +754,12 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
                 }
             }
             update_cell(sheet, row, col, formula);
-             None
+            None
         } else {
-             Some("Invalid cell reference".to_string())
+            Some("Invalid cell reference".to_string())
         }
     } else {
-         Some("Invalid command format".to_string())
+        Some("Invalid command format".to_string())
     }
 }
 
@@ -719,9 +782,14 @@ pub fn display_sheet(sheet: &Sheet) {
                 3
             } else {
                 let val = cell.value;
-                if val == 0 { 1 } else { val.to_string().len() }
+                if val == 0 {
+                    1
+                } else {
+                    val.to_string().len()
+                }
             };
-            max_widths[(j - sheet.view_col) as usize] = max_widths[(j - sheet.view_col) as usize].max(width);
+            max_widths[(j - sheet.view_col) as usize] =
+                max_widths[(j - sheet.view_col) as usize].max(width);
         }
     }
 
@@ -729,7 +797,11 @@ pub fn display_sheet(sheet: &Sheet) {
     for j in sheet.view_col..(sheet.view_col + DISPLAY_SIZE).min(sheet.cols) {
         let mut col_header = String::new();
         encode_column(j, &mut col_header);
-        print!("{:width$} ", col_header, width = max_widths[(j - sheet.view_col) as usize]);
+        print!(
+            "{:width$} ",
+            col_header,
+            width = max_widths[(j - sheet.view_col) as usize]
+        );
     }
     println!();
 
@@ -766,10 +838,17 @@ pub fn display_sheet(sheet: &Sheet) {
     io::stdout().flush().unwrap();
 }
 
-pub fn display_graph(sheet: &mut Sheet, graph_type: GraphType, start_row: i32, start_col: i32, end_row: i32, end_col: i32) -> String {
+pub fn display_graph(
+    sheet: &mut Sheet,
+    graph_type: GraphType,
+    start_row: i32,
+    start_col: i32,
+    end_row: i32,
+    end_col: i32,
+) -> String {
     let mut values = Vec::new();
     let mut labels = Vec::new();
-    
+
     for i in start_row..=end_row {
         for j in start_col..=end_col {
             let cell = &sheet.cells[i as usize][j as usize];
@@ -780,7 +859,7 @@ pub fn display_graph(sheet: &mut Sheet, graph_type: GraphType, start_row: i32, s
             labels.push(label);
         }
     }
-    
+
     let max_val = *values.iter().filter(|&&v| v > 0).max().unwrap_or(&10);
     let max_label_width = labels.iter().map(|l| l.len()).max().unwrap_or(2);
     let column_width = max_label_width.max(3) + 1;
@@ -811,7 +890,7 @@ pub fn display_graph(sheet: &mut Sheet, graph_type: GraphType, start_row: i32, s
                 output.push_str(&format!("{:^width$}", label, width = column_width));
             }
             output.push('\n');
-        },
+        }
         GraphType::Scatter => {
             output.push_str("\nScatter Plot for range:\n".to_string().as_str());
             for value in (1..=max_val).rev() {
@@ -821,7 +900,11 @@ pub fn display_graph(sheet: &mut Sheet, graph_type: GraphType, start_row: i32, s
                     if cell_value == value {
                         output.push_str(&format!("{:width$}", " ", width = center));
                         output.push('*');
-                        output.push_str(&format!("{:width$}", " ", width = column_width - center - 1));
+                        output.push_str(&format!(
+                            "{:width$}",
+                            " ",
+                            width = column_width - center - 1
+                        ));
                     } else {
                         output.push_str(&format!("{:^width$}", " ", width = column_width));
                     }
@@ -844,7 +927,13 @@ pub fn display_graph(sheet: &mut Sheet, graph_type: GraphType, start_row: i32, s
 }
 
 impl Sheet {
-    pub fn get_cell_range(&self, start_row: i32, start_col: i32, end_row: i32, end_col: i32) -> Vec<Vec<Cell>> {
+    pub fn get_cell_range(
+        &self,
+        start_row: i32,
+        start_col: i32,
+        end_row: i32,
+        end_col: i32,
+    ) -> Vec<Vec<Cell>> {
         let mut range = Vec::new();
         for i in start_row..=end_row {
             let mut row = Vec::new();
@@ -875,8 +964,20 @@ impl Sheet {
     }
 }
 
-pub fn copy_range(sheet: &mut Sheet, start_row: i32, start_col: i32, end_row: i32, end_col: i32) -> bool {
-    if start_row >= 0 && start_col >= 0 && end_row < sheet.rows && end_col < sheet.cols && start_row <= end_row && start_col <= end_col {
+pub fn copy_range(
+    sheet: &mut Sheet,
+    start_row: i32,
+    start_col: i32,
+    end_row: i32,
+    end_col: i32,
+) -> bool {
+    if start_row >= 0
+        && start_col >= 0
+        && end_row < sheet.rows
+        && end_col < sheet.cols
+        && start_row <= end_row
+        && start_col <= end_col
+    {
         let contents = sheet.get_cell_range(start_row, start_col, end_row, end_col);
         *CLIPBOARD.lock().unwrap() = Some(Clipboard {
             contents,
@@ -889,8 +990,20 @@ pub fn copy_range(sheet: &mut Sheet, start_row: i32, start_col: i32, end_row: i3
     }
 }
 
-pub fn cut_range(sheet: &mut Sheet, start_row: i32, start_col: i32, end_row: i32, end_col: i32) -> bool {
-    if start_row >= 0 && start_col >= 0 && end_row < sheet.rows && end_col < sheet.cols && start_row <= end_row && start_col <= end_col {
+pub fn cut_range(
+    sheet: &mut Sheet,
+    start_row: i32,
+    start_col: i32,
+    end_row: i32,
+    end_col: i32,
+) -> bool {
+    if start_row >= 0
+        && start_col >= 0
+        && end_row < sheet.rows
+        && end_col < sheet.cols
+        && start_row <= end_row
+        && start_col <= end_col
+    {
         let contents = sheet.get_cell_range(start_row, start_col, end_row, end_col);
         for i in start_row..=end_row {
             for j in start_col..=end_col {
@@ -913,7 +1026,8 @@ pub fn paste_range(sheet: &mut Sheet, start_row: i32, start_col: i32) -> bool {
     let success = {
         let mut clipboard = CLIPBOARD.lock().unwrap();
         if let Some(clipboard_data) = &*clipboard {
-            if start_row >= 0 && start_col >= 0 && start_row < sheet.rows && start_col < sheet.cols {
+            if start_row >= 0 && start_col >= 0 && start_row < sheet.rows && start_col < sheet.cols
+            {
                 sheet.set_cell_range(start_row, start_col, &clipboard_data.contents);
                 if clipboard_data.is_cut {
                     *clipboard = None;
@@ -926,10 +1040,10 @@ pub fn paste_range(sheet: &mut Sheet, start_row: i32, start_col: i32) -> bool {
             false
         }
     };
-    
+
     if success {
         display_sheet(sheet);
     }
-    
+
     success
 }

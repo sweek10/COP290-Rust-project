@@ -165,7 +165,8 @@ pub fn is_factorial_sequence(values: &[i32]) -> Option<(i32, i32)> {
             possible_start_n.push(start_n);
         }
         start_n += 1;
-        if start_n > 20 { // Prevent excessive computation
+        if start_n > 20 {
+            // Prevent excessive computation
             break;
         }
     }
