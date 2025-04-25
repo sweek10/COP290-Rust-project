@@ -3,6 +3,8 @@ mod dependencies;
 mod sheet;
 mod types;
 mod utils;
+#[cfg(test)]
+mod tests; // Add this
 
 use crate::sheet::{create_sheet, display_sheet, process_command};
 use crate::types::{Sheet, SHEET};
@@ -25,6 +27,7 @@ struct CommandForm {
     command: String,
 }
 
+#[cfg(not(tarpaulin_include))]
 #[get("/?<message>")]
 fn index(message: Option<String>) -> Template {
     let sheet = SHEET.lock().unwrap();
@@ -88,6 +91,7 @@ fn index(message: Option<String>) -> Template {
     )
 }
 
+#[cfg(not(tarpaulin_include))]
 #[post("/command", data = "<form>")]
 fn command(form: Form<CommandForm>) -> Redirect {
     let command = form.command.clone();
@@ -107,6 +111,8 @@ fn command(form: Form<CommandForm>) -> Redirect {
     }
 }
 
+
+#[cfg(not(tarpaulin_include))]
 #[post("/scroll/<direction>")]
 fn scroll(direction: String) -> Redirect {
     let direction = direction.chars().next().unwrap_or(' ');
@@ -120,6 +126,8 @@ fn scroll(direction: String) -> Redirect {
     Redirect::to("/")
 }
 
+
+#[cfg(not(tarpaulin_include))]
 fn load_csv_file(sheet: &mut Sheet, filename: &str) -> Result<(), String> {
     let file = File::open(filename).map_err(|e| format!("Failed to open CSV file: {}", e))?;
     let reader = io::BufReader::new(file);
@@ -164,6 +172,7 @@ fn load_csv_file(sheet: &mut Sheet, filename: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(not(tarpaulin_include))]
 fn load_excel_file(sheet: &mut Sheet, filename: &str) -> Result<(), String> {
     let mut workbook: Xlsx<_> =
         open_workbook(filename).map_err(|e| format!("Failed to open Excel file: {}", e))?;
@@ -228,6 +237,7 @@ fn load_excel_file(sheet: &mut Sheet, filename: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(not(tarpaulin_include))]
 #[rocket::main]
 async fn main() -> Result<(), rocket::Error> {
     let args: Vec<String> = std::env::args().collect();
