@@ -75,8 +75,8 @@ pub struct Sheet {
     pub output_enabled: bool,
     pub circular_dependency_detected: bool,
     pub extension_enabled: bool,
-    pub command_history: Vec<String>,
-    pub command_position: usize,
+    // pub command_history: Vec<String>,
+    // pub command_position: usize,
     pub max_history_size: usize,
     pub dependency_graph: HashMap<(i32, i32), CellDependencies>,
     pub undo_stack: Vec<SheetState>,
@@ -93,7 +93,7 @@ pub enum GraphType {
 pub struct Clipboard {
     pub contents: Vec<Vec<Cell>>,
     pub is_cut: bool,
-    pub source_range: Option<(i32, i32, i32, i32)>,
+    // pub source_range: Option<(i32, i32, i32, i32)>,
 }
 
 lazy_static::lazy_static! {
