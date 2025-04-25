@@ -1,10 +1,10 @@
 mod cell;
 mod dependencies;
 mod sheet;
+#[cfg(test)]
+mod tests;
 mod types;
 mod utils;
-#[cfg(test)]
-mod tests; // Add this
 
 use crate::sheet::{create_sheet, display_sheet, process_command};
 use crate::types::{Sheet, SHEET};
@@ -27,6 +27,23 @@ struct CommandForm {
     command: String,
 }
 
+/// Renders the main web interface for the spreadsheet.
+///
+/// This function generates the HTML template for the spreadsheet's web interface, displaying
+/// a portion of the sheet based on the current view. It includes cell values, styling, and
+/// any error messages.
+///
+/// # Arguments
+/// * `message` - An optional message to display (e.g., error or success message).
+///
+/// # Returns
+/// A `Template` containing the rendered HTML.
+///
+/// # Example
+/// ```text
+/// // Access the web interface at http://localhost:8000
+/// // The interface shows a 10x10 grid of cells with values and styling
+/// ```
 #[cfg(not(tarpaulin_include))]
 #[get("/?<message>")]
 fn index(message: Option<String>) -> Template {
@@ -91,6 +108,22 @@ fn index(message: Option<String>) -> Template {
     )
 }
 
+/// Processes a command submitted via the web interface.
+///
+/// This function handles commands submitted through the web form, processes them using
+/// `process_command`, and redirects to the main page with an optional message.
+///
+/// # Arguments
+/// * `form` - The form data containing the command string.
+///
+/// # Returns
+/// A `Redirect` to the main page, possibly with a message.
+///
+/// # Example
+/// ```text
+/// // POST request to /command with form data "command=A1=5"
+/// // Redirects to main page after setting A1 to 5
+/// ```
 #[cfg(not(tarpaulin_include))]
 #[post("/command", data = "<form>")]
 fn command(form: Form<CommandForm>) -> Redirect {
@@ -111,7 +144,22 @@ fn command(form: Form<CommandForm>) -> Redirect {
     }
 }
 
-
+/// Scrolls the spreadsheet view in the specified direction.
+///
+/// This function processes a scroll command (w, a, s, d) submitted via a POST request
+/// and updates the spreadsheet's view accordingly.
+///
+/// # Arguments
+/// * `direction` - The direction to scroll (w, a, s, d).
+///
+/// # Returns
+/// A `Redirect` to the main page.
+///
+/// # Example
+/// ```text
+/// // POST request to /scroll/s
+/// // Scrolls the view down by 10 rows
+/// ```
 #[cfg(not(tarpaulin_include))]
 #[post("/scroll/<direction>")]
 fn scroll(direction: String) -> Redirect {
@@ -126,7 +174,26 @@ fn scroll(direction: String) -> Redirect {
     Redirect::to("/")
 }
 
-
+/// Loads a CSV file into the spreadsheet.
+///
+/// This function reads a CSV file and populates the spreadsheet with its values.
+/// Formulas (starting with '=') are processed after all values are loaded.
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet.
+/// * `filename` - The path to the CSV file.
+///
+/// # Returns
+/// A `Result<(), String>` indicating success or an error message.
+///
+/// # Example
+/// ```
+/// let mut sheet = create_sheet(10, 10, true).unwrap();
+/// // Assume "data.csv" contains "5,=A1+1"
+/// load_csv_file(&mut sheet, "data.csv").unwrap();
+/// assert_eq!(sheet.cells[0][0].value, 5);
+/// assert_eq!(sheet.cells[0][1].value, 6);
+/// ```
 #[cfg(not(tarpaulin_include))]
 fn load_csv_file(sheet: &mut Sheet, filename: &str) -> Result<(), String> {
     let file = File::open(filename).map_err(|e| format!("Failed to open CSV file: {}", e))?;
@@ -172,6 +239,26 @@ fn load_csv_file(sheet: &mut Sheet, filename: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Loads an Excel file into the spreadsheet.
+///
+/// This function reads an Excel (.xlsx) file and populates the spreadsheet with its values.
+/// It handles various data types (int, float, string, bool) and processes formulas.
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet.
+/// * `filename` - The path to the Excel file.
+///
+/// # Returns
+/// A `Result<(), String>` indicating success or an error message.
+///
+/// # Example
+/// ```
+/// let mut sheet = create_sheet(10, 10, true).unwrap();
+/// // Assume "data.xlsx" contains a sheet with "10" in A1 and "=A1+5" in B1
+/// load_excel_file(&mut sheet, "data.xlsx").unwrap();
+/// assert_eq!(sheet.cells[0][0].value, 10);
+/// assert_eq!(sheet.cells[0][1].value, 15);
+/// ```
 #[cfg(not(tarpaulin_include))]
 fn load_excel_file(sheet: &mut Sheet, filename: &str) -> Result<(), String> {
     let mut workbook: Xlsx<_> =
@@ -237,6 +324,22 @@ fn load_excel_file(sheet: &mut Sheet, filename: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The main entry point for the spreadsheet application.
+///
+/// This function initializes the spreadsheet, processes command-line arguments, and either
+/// starts a web server (if extensions are enabled) or runs a terminal-based interface.
+/// It also handles loading input files if provided.
+///
+/// # Returns
+/// A `Result<(), rocket::Error>` indicating whether the application ran successfully.
+///
+/// # Example
+/// ```text
+/// // Run with: cargo run -- 10 10
+/// // Creates a 10x10 spreadsheet and starts the terminal interface
+/// // Or with: cargo run --extension 10 10 data.csv
+/// // Loads data.csv and starts the web server
+/// ```
 #[cfg(not(tarpaulin_include))]
 #[rocket::main]
 async fn main() -> Result<(), rocket::Error> {
