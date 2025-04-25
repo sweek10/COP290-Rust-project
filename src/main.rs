@@ -417,7 +417,7 @@ async fn main() -> Result<(), rocket::Error> {
     if extension_enabled {
         rocket::build()
             .configure(rocket::Config::figment()
-                .merge(("port", 1835)))  // Configure to use port 1835 because port 80 is privileged and can only be accessed by using sudo.
+                .merge(("port", 8000)))  // Configure to use port 1835 because port 80 is privileged and can only be accessed by using sudo.
             .mount("/", rocket::routes![index, command, scroll])
             .attach(Template::fairing())
             .launch()
