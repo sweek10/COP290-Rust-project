@@ -1,0 +1,225 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{hyperref}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{url}
+\begin{document}
+\begin{center}
+\vspace*{0.5cm}
+\Large
+\textbf{Rust Lab: Extended Spreadsheet program}
+
+\vspace{0.5cm}
+\small
+\textbf{Team Members}
+\vspace{0.5cm}
+\\Shreya Bhaskar(2023CS10941)
+\\Sweety Naveen Kumar (2023CS10172)
+\\Sambhav Singhwi (2023CS10722)
+\vspace{0.5cm}
+\end{center}
+
+\tableofcontents
+\newpage
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    stringstyle=\color{red}
+}
+
+
+
+
+
+\section{Introduction}
+This report describes a spreadsheet program written in Rust. The program allows users to create, edit, and manage spreadsheets through a command-line interface or a web interface when extensions are enabled. It supports basic spreadsheet operations like entering formulas, copying and pasting cells, and visualizing data with graphs. The program is designed to be efficient and robust, handling dependencies and errors effectively.
+
+\section{Program Overview}
+The spreadsheet program is built in Rust, a programming language known for its safety and performance. The program is modular, with separate files for different functionalities:
+\begin{itemize}
+    \item \texttt{main.rs}: Handles program startup, user input, and the web server (if enabled).
+    \item \texttt{sheet.rs}: Manages the spreadsheet’s structure, display, and commands like scrolling, copying, and pasting.
+    \item \texttt{cell.rs}: Handles cell updates, formula evaluation, and dependency management.
+    \item \texttt{dependencies.rs}: Manages cell dependencies and detects circular dependencies.
+    \item \texttt{types.rs}: Defines data structures like cells, sheets, and dependency types.
+    \item \texttt{utils.rs}: Contains helper functions for parsing, pattern detection, and calculations.
+\end{itemize}
+
+The program supports two modes:
+\begin{itemize}
+    \item \textbf{Standard Mode}: A command-line interface for basic spreadsheet operations.
+    \item \textbf{Extension Mode}: Adds advanced features like undo/redo, row/column deletion etc , and a web interface using the Rocket framework which run with the "--extension" flag (\texttt{./target/release/spreadsheet --extension 999 18278})
+\end{itemize}
+
+
+\section{Key Features}
+The program provides the following features:
+\begin{itemize}
+\subsection{Core Features}
+
+    \item \textbf{CLI Compatibility}: The application provides complete compatibility with the C version, ensuring autograder compatibility.
+    \item \textbf{Spreadsheet Operations}: Supports standard spreadsheet functionality including cell references, arithmetic operations, and various formulae.
+    \item \textbf{Navigation}: Cell navigation using \texttt{w}/\texttt{a}/\texttt{s}/\texttt{d} keys.
+    \item \textbf{Viewport Control}: Users can enable or disable output features as needed.
+\end{itemize}
+
+
+
+\begin{itemize}
+    \item \textbf{Cell Management}: Users can enter values or formulas in cells. Formulas support arithmetic operations (e.g., \texttt{A1+B1}) and functions like \texttt{SUM}, \texttt{AVG}, \texttt{MIN}, \texttt{MAX}, and \texttt{STDEV}.
+    \item \textbf{Dependency Tracking}: The program tracks cell dependencies and updates dependent cells when a cell’s value changes. It also detects circular dependencies to prevent errors.
+    \item \textbf{Scrolling and Navigation}: Users can scroll through the spreadsheet using \texttt{w}, \texttt{a}, \texttt{s}, \texttt{d} keys or jump to a specific cell with the \texttt{scroll\_to} command.
+\subsection{Extended Features}
+     \item \textbf{Web Interface}: Extension mode includes a web interface for interacting with the spreadsheet using the Rocket framework.
+    \item \textbf{Copy, Cut, and Paste}: Users can copy or cut a range of cells and paste them elsewhere, preserving formulas and values using commands like (e.g. \texttt{CUT A1:A1} for single cell, \texttt{CUT A1:A100} for range of cells , \texttt{COPY A1:A1}, \texttt{COPY A1:A100} and using the starting cell reference only to paste as in  \texttt{PASTE A1}).
+    \item \textbf{Formatting}: In extension mode, users can apply bold, italic, or underline formatting to cells using commands like \texttt{A1=BOLD(A1)}.
+    \item \textbf{Formula Bar}: In extension mode, users can use the \texttt{FORMULA} command (e.g., \texttt{FORMULA A1}) to view the formula associated with a specific cell, if any.
+    \item \textbf{Autofill}: The program detects patterns (e.g., Arithmetic, Geometric, Fibonacci,Triangular and Factorial sequences) and autofills cells based on these patterns using commands with the starting cell from which the pattern has to be filled as reference like \texttt{A5=AUTOFILL(A5:A999)}.
+    \item \textbf{Graphs and Scatter Plots}: Users can create bar graphs or scatter plots for a range of cells in extension mode by using commands like (\texttt{GRAPH (BAR) A1:A10}) and (\texttt{GRAPH (SCATTER) A1:A10})
+    \item \textbf{Undo/Redo}: Extension mode supports undoing and redoing actions, storing up to 10 previous states.
+    \item \textbf{File Import}: In extension mode, users can import data from CSV or Excel files. Loading is done while executing the program (e.g., \texttt{./target/release/spreadsheet --extension 999 18278 input.csv})
+    \item \textbf{Sorting}: In extension mode, supports one-dimensional and two-dimensional sorting in ascending (\texttt{SORTA}) and descending (\texttt{SORTD}) order for cell ranges, implemented in \texttt{sheet.rs}’s \texttt{process\_command} function (e.g., \texttt{SORTA A1:A10}, \texttt{SORTD B1:C5}).
+    \item \textbf{Row and Column Deletion}: In extension mode, users can delete rows or columns using commands like \texttt{ROWDEL 1} or \texttt{COLDEL A}, updating the spreadsheet structure and dependencies.
+\end{itemize}
+   
+
+
+\section{Implementation Details}
+The program uses a modular design with clear separation of concerns. Below are key implementation details:
+
+\subsection{Data Structures}
+The \texttt{types.rs} file defines the core data structures:
+\begin{itemize}
+    \item \texttt{Cell}: Stores a cell’s value, formula, and properties like error status and formatting (bold, italic, underline).
+    \item \texttt{Sheet}: Represents the spreadsheet, containing a grid of cells, dependency graph, and state information like view position and command history.
+    \item \texttt{DependencyType}: Represents cell dependencies, either single cells or ranges.
+    \item \texttt{CellDependencies}: Tracks which cells a cell depends on and which cells depend on it.
+\end{itemize}
+
+\subsection{Formula Evaluation}
+The \texttt{cell.rs} file handles formula evaluation. Formulas can include:
+\begin{itemize}
+    \item Arithmetic operations (e.g., \texttt{A1+B1*2}).
+    \item Range functions (e.g., \texttt{SUM(A1:A5)}).
+    \item Special functions like \texttt{SLEEP} for pausing execution.
+\end{itemize}
+The program parses formulas, resolves cell references, and evaluates expressions. It also checks for errors like division by zero or invalid references.
+
+\subsection{Dependency Management}
+The \texttt{dependencies.rs} file manages cell dependencies using a graph stored in a \texttt{HashMap}. Key functions include:
+\begin{itemize}
+    \item \texttt{has\_circular\_dependency}: Uses depth-first search to detect circular dependencies.
+    \item \texttt{recalculate\_dependents}: Uses breadth-first search and topological sorting to update dependent cells in the correct order.
+    \item \texttt{remove\_dependency}: Removes dependencies when cells are modified or deleted.
+\end{itemize}
+
+\subsection{Command Processing}
+The \texttt{sheet.rs} file processes user commands. Commands include:
+\begin{itemize}
+    \item Navigation: \texttt{w}, \texttt{a}, \texttt{s}, \texttt{d}, \texttt{scroll\_to A1}.
+    \item Cell updates: \texttt{A1=5}, \texttt{A1=SUM(B1:B5)}.
+    \item Clipboard operations: \texttt{COPY A1:A5}, \texttt{CUT A1:A5}, \texttt{PASTE B1}.
+    \item Formatting: \texttt{A1=BOLD(B1)}.
+    \item Graphs: \texttt{GRAPH (BAR) A1:A5}.
+    \item Row/Column deletion: \texttt{ROWDEL 1}, \texttt{COLDEL A}.
+\end{itemize}
+Commands are validated using \texttt{is\_valid\_command} in \texttt{utils.rs} before execution.
+
+\subsection{Pattern Detection and Autofill}
+The \texttt{utils.rs} file includes \texttt{detect\_pattern} to identify sequences like constant, arithmetic, geometric, Fibonacci, factorial, or triangular. The \texttt{AUTOFILL} command uses this to fill cells based on detected patterns.
+
+\subsection{Web Interface}
+In extension mode, \texttt{main.rs} sets up a Rocket web server with routes like \texttt{index}, \texttt{command}, and \texttt{scroll} to manage user interactions. The web interface is defined in the \texttt{index.html.tera} template, located in the templates folder, which renders the spreadsheet as an interactive HTML table. Key features include:
+\begin{itemize}
+    \item A responsive table displaying cell values with dynamic styling (e.g., bold, italic, underline) based on cell properties, using CSS variables for light and dark themes.
+    \item A theme toggle switch implemented in JavaScript, allowing users to switch between light and dark modes with preferences saved in local storage.
+    \item A status bar showing \texttt{(ok)} or \texttt{(err)} for circular dependency detection, styled with theme-aware colors.
+    \item A message area for command outputs (e.g., \texttt{FORMULA A1} results), formatted with a monospace font and responsive layout.
+    \item A command input form for entering commands (e.g., \texttt{A1=5}, \texttt{w}), with automatic focus on page load and mobile-friendly design.
+\end{itemize}
+The Tera template uses templating syntax to populate data (e.g., cell values, column headers) from the \texttt{index} route in \texttt{main.rs}. CSS ensures a modern, accessible interface with smooth theme transitions and responsive layouts for desktop and mobile devices.
+
+
+\section{Approaches for Encapsulation}
+The program uses encapsulation to manage complexity and ensure data integrity through Rust’s features:
+\begin{itemize}
+    \item \textbf{Struct Encapsulation}: Structs like \texttt{Cell} and \texttt{Sheet} in \texttt{types.rs} bundle data (e.g., cell value, formula) and expose it via public methods, controlling access and modifications.
+    \item \textbf{Module Boundaries}: Modules like \texttt{cell.rs} and \texttt{dependencies.rs} encapsulate specific functionality, exposing only necessary functions (e.g., \texttt{update\_cell}) to prevent direct access to internal logic.
+    \item \textbf{Global State}: Global variables (\texttt{SHEET}, \texttt{CLIPBOARD}) in \texttt{types.rs} are wrapped in \texttt{Mutex} for thread-safe access, encapsulating shared state.
+    \item \textbf{Ownership Model}: Rust’s ownership rules ensure functions like \texttt{update\_cell} in \texttt{cell.rs} use mutable references (\texttt{\&mut Sheet}) to safely modify data.
+\end{itemize}
+These techniques keep components isolated, improving maintainability and reducing errors.
+
+\section{Interfaces Between Software Modules}
+The program’s modules communicate through well-defined interfaces, ensuring modularity and clear data flow:
+\begin{itemize}
+    \item \texttt{main.rs} and \texttt{sheet.rs}: \texttt{main.rs} calls \texttt{sheet.rs} functions like \texttt{process\_command} to handle user inputs, passing commands as strings and receiving status messages or errors.
+    \item \texttt{sheet.rs} and \texttt{cell.rs}: \texttt{sheet.rs} uses \texttt{update\_cell} in \texttt{cell.rs} to modify cell values or formulas, providing a mutable \texttt{Sheet} reference and cell coordinates.
+    \item \texttt{cell.rs} and \texttt{dependencies.rs}: \texttt{cell.rs} calls \texttt{recalculate\_dependents} and other check functions such as \texttt{has\_circular\_dependency} in \texttt{dependencies.rs} to update dependent cells and check for circular references, passing cell IDs and dependency graphs.
+    \item \texttt{types.rs} as Shared Interface: All modules use structs like \texttt{Cell}, \texttt{Sheet}, and \texttt{CellDependencies} from \texttt{types.rs}, ensuring consistent data representation across the program.
+    \item \texttt{utils.rs} Support: Modules like \texttt{cell.rs} and \texttt{sheet.rs} use \texttt{utils.rs} functions (e.g., \texttt{parse\_cell}, \texttt{detect\_pattern}) for parsing and calculations, passing input data and receiving processed results.
+    \item \texttt{main.rs} and \texttt{index.html.tera}: In extension mode, \texttt{main.rs} provides data (e.g., cell values, styles) to the \texttt{index.html.tera} template via the \texttt{index} route, which renders the web interface and returns user commands to \texttt{main.rs} via the \texttt{command} route.
+\end{itemize}
+
+\section{Extensions and Future Work}
+In addition to the proposed extensions for the Rust lab , we could also implement the following extensions :-
+\begin{itemize}
+ \item\textbf{Web Interface:} The web interface renders the spreadsheet as an interactive HTML table with command input and dynamic styling.
+ \item\textbf{Support for .csv and .xlsx files:} In extension mode, the program supports loading data from .csv and .xlsx files, enabling users to import spreadsheet data seamlessly.
+\end{itemize}
+
+\section{Why This Design is Effective}
+The program’s design is effective for the following reasons:
+\begin{itemize}
+    \item \textbf{Modularity}: The clear separation of concerns across modules (e.g., \texttt{cell.rs} for cell updates, \texttt{sheet.rs} for user interactions) simplifies maintenance and feature additions.
+    \item \textbf{Encapsulation}: Encapsulated data and interfaces (e.g., \texttt{Cell} structs, public functions) prevent unintended modifications, enhancing reliability.
+    \item \textbf{Rust’s Safety}: Rust’s ownership and type system ensure safe data access and thread-safe operations, reducing runtime errors in both command-line and web modes.
+\end{itemize}
+
+\section{Modifications in Design During Implementation}
+During development, the dependency management system evolved to improve efficiency and support additional functionalities:
+\begin{itemize}
+    \item Initially, a linked list was used to store cell dependencies, which was simple but slow for frequent traversals and updates.
+    \item This was replaced with a \texttt{Vec<DependencyType>} to allow easier iteration and support for range-based dependencies (e.g., \texttt{A1:A5}), improving flexibility for functions like \texttt{SUM}.
+    \item The final design adopted the current \texttt{CellDependencies} structure in \texttt{types.rs}, using a \textbf\texttt{HashMap} to map cell IDs to their dependencies and dependents. This enabled faster lookups, efficient circular dependency detection via \texttt{has\_circular\_dependency}, and reliable updates through \texttt{recalculate\_dependents}, supporting features like autofill and row/column deletion.
+\end{itemize}
+These changes enhanced performance and scalability for dependency checks and other operations.
+\section{Testing Approach}
+
+\begin{enumerate}
+    \item \textbf{Unit Tests}: Testing individual components (formula parsing, evaluation, dependency tracking)
+    \item \textbf{Integration Tests}: Testing interactions between components
+    \item \textbf{Regression Tests}: Ensuring compatibility with the C implementation for autograder
+    \item \textbf{Manual Testing}: UI and usability testing with sample spreadsheets
+\end{enumerate}
+
+
+\section{Conclusion}
+The Rust spreadsheet program is a robust and feature-rich application for managing spreadsheets. Its modular design makes it easy to maintain and extend. The program efficiently handles cell dependencies, formula evaluation, and user commands while providing advanced features like autofill, graphs, and a web interface in extension mode. Future improvements could include support for more file formats, additional formula functions, or enhanced graph customization.
+
+\section{References}
+The following resources were consulted during the development of the spreadsheet program:
+\begin{enumerate}
+    \item The Rust Programming Language Book. \url{https://doc.rust-lang.org/book/}.
+    \item Rocket Web Framework Documentation. \url{https://rocket.rs/v0.5-rc/guide/}. 
+    \item Tera Templating Engine Documentation. \url{https://tera.netlify.app/docs/}. 
+    \item csv Crate Documentation. Andrew Gallant. Available: \url{https://docs.rs/csv/latest/csv/}. 
+    \item calamine Crate Documentation.\url{https://docs.rs/calamine/latest/calamine/}. 
+\end{enumerate}
+
+\section{Project link}
+\subsection{Github Repository}
+\href{https://github.com/sweek10/COP290-Rust-project.git}{https://github.com/sweek10/COP290-Rust-project.git}
+
+
+
+\end{document}
