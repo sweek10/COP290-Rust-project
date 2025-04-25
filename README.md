@@ -18,3 +18,5 @@ If any .csv or .xlsx file is to be loaded in the spreasheet while running the ex
 ## 2) ##
 After the presentation of our extensions on 22nd April, we have improved our web interface to support toggling between dark and light themes and also correct the **UNDO-REDO EXTENSION** which now works appropriately  
 for all the file input extension along with other extensions.
+## 3) ##
+We used #[cfg(not(tarpaulin_include))] — which tells cargo-tarpaulin to ignore min.rs — because we only needed to check the test coverage of the non-extension (i.e., terminal-based) part of the spreadsheet program, and not the Rocket-based web interface or file-loading extensions which is implemented in main.rs.
