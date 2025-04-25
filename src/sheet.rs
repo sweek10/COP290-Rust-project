@@ -12,6 +12,25 @@ use std::io::{self, Write};
 const DISPLAY_SIZE: i32 = 10;
 type CellAttributes = (i32, Option<String>, bool, bool, bool, bool, bool);
 
+/// Creates a new spreadsheet with the specified dimensions.
+///
+/// This function initializes a spreadsheet with the given number of rows and columns,
+/// creating a grid of empty cells. It also sets whether extensions are enabled.
+///
+/// # Arguments
+/// * `rows` - The number of rows in the spreadsheet.
+/// * `cols` - The number of columns in the spreadsheet.
+/// * `extension_enabled` - Whether advanced features are enabled.
+///
+/// # Returns
+/// An `Option<Sheet>` containing the initialized spreadsheet.
+///
+/// # Example
+/// ```
+/// let sheet = create_sheet(5, 5, false).unwrap();
+/// assert_eq!(sheet.rows, 5);
+/// assert_eq!(sheet.cols, 5);
+/// ```
 pub fn create_sheet(rows: i32, cols: i32, extension_enabled: bool) -> Option<Sheet> {
     let mut cells = Vec::with_capacity(rows as usize);
     for _ in 0..rows {
@@ -28,6 +47,8 @@ pub fn create_sheet(rows: i32, cols: i32, extension_enabled: bool) -> Option<She
         output_enabled: true,
         circular_dependency_detected: false,
         extension_enabled,
+        // command_history: Vec::with_capacity(10),
+        // command_position: 0,
         max_history_size: 10,
         dependency_graph: HashMap::new(),
         undo_stack: Vec::new(),
@@ -35,6 +56,21 @@ pub fn create_sheet(rows: i32, cols: i32, extension_enabled: bool) -> Option<She
     })
 }
 
+/// Scrolls the spreadsheet view in the specified direction.
+///
+/// This function adjusts the viewable portion of the spreadsheet based on the direction
+/// (w: up, s: down, a: left, d: right), ensuring the view stays within bounds.
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet.
+/// * `direction` - The direction to scroll (w, a, s, d).
+///
+/// # Example
+/// ```
+/// let mut sheet = create_sheet(20, 20, false).unwrap();
+/// scroll_sheet(&mut sheet, 's');
+/// assert_eq!(sheet.view_row, 10);
+/// ```
 pub fn scroll_sheet(sheet: &mut Sheet, direction: char) {
     match direction {
         'w' => {
@@ -75,6 +111,27 @@ pub fn scroll_sheet(sheet: &mut Sheet, direction: char) {
     }
 }
 
+/// Scrolls the spreadsheet view to a specific cell.
+///
+/// # Description
+/// Sets the spreadsheet's view to center on the specified cell coordinates (row, col).
+/// If the coordinates are invalid (outside the spreadsheet bounds), it prints an error message and does not change the view.
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet.
+/// * `row` - The target row index (0-based).
+/// * `col` - The target column index (0-based).
+///
+/// # Example
+/// ```
+/// use spreadsheet::{create_sheet, scroll_to_cell};
+/// let mut sheet = create_sheet(20, 20, false).unwrap();
+/// scroll_to_cell(&mut sheet, 15, 15);
+/// assert_eq!(sheet.view_row, 15);
+/// assert_eq!(sheet.view_col, 15);
+/// scroll_to_cell(&mut sheet, 25, 25); // Invalid coordinates
+/// // Prints "Invalid cell coordinates for scroll"
+/// ```
 pub fn scroll_to_cell(sheet: &mut Sheet, row: i32, col: i32) {
     if row >= 0 && row < sheet.rows && col >= 0 && col < sheet.cols {
         sheet.view_row = row;
@@ -84,6 +141,21 @@ pub fn scroll_to_cell(sheet: &mut Sheet, row: i32, col: i32) {
     }
 }
 
+/// Saves the current state of the spreadsheet to the undo stack.
+///
+/// This function captures the current state of the spreadsheet's cells and dependency graph
+/// and adds it to the undo stack. It ensures the stack does not exceed the maximum history size.
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet.
+///
+/// # Example
+/// ```
+/// let mut sheet = create_sheet(5, 5, true).unwrap();
+/// sheet.cells[0][0].value = 10;
+/// save_state(&mut sheet);
+/// assert_eq!(sheet.undo_stack.len(), 1);
+/// ```
 pub fn save_state(sheet: &mut Sheet) {
     if !sheet.extension_enabled {
         return;
@@ -107,6 +179,26 @@ pub fn save_state(sheet: &mut Sheet) {
     }
 }
 
+/// Reverts the spreadsheet to the previous state in the undo stack.
+///
+/// This function restores the spreadsheet to the most recent state in the undo stack,
+/// saving the current state to the redo stack. It only works if extensions are enabled.
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet.
+///
+/// # Returns
+/// An `Option<String>` with an error message if the operation fails, or `None` on success.
+///
+/// # Example
+/// ```
+/// let mut sheet = create_sheet(5, 5, true).unwrap();
+/// sheet.cells[0][0].value = 10;
+/// save_state(&mut sheet);
+/// sheet.cells[0][0].value = 20;
+/// undo(&mut sheet);
+/// assert_eq!(sheet.cells[0][0].value, 10);
+/// ```
 pub fn undo(sheet: &mut Sheet) -> bool {
     if !sheet.extension_enabled || sheet.undo_stack.is_empty() {
         return false;
@@ -129,6 +221,27 @@ pub fn undo(sheet: &mut Sheet) -> bool {
     true
 }
 
+/// Restores the spreadsheet to the next state in the redo stack.
+///
+/// This function reapplies the most recent state from the redo stack, saving the current
+/// state to the undo stack. It only works if extensions are enabled.
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet.
+///
+/// # Returns
+/// An `Option<String>` with an error message if the operation fails, or `None` on success.
+///
+/// # Example
+/// ```
+/// let mut sheet = create_sheet(5, 5, true).unwrap();
+/// sheet.cells[0][0].value = 10;
+/// save_state(&mut sheet);
+/// sheet.cells[0][0].value = 20;
+/// undo(&mut sheet);
+/// redo(&mut sheet);
+/// assert_eq!(sheet.cells[0][0].value, 20);
+/// ```
 pub fn redo(sheet: &mut Sheet) -> bool {
     if !sheet.extension_enabled || sheet.redo_stack.is_empty() {
         return false;
@@ -151,6 +264,30 @@ pub fn redo(sheet: &mut Sheet) -> bool {
     true
 }
 
+/// Processes a user command to manipulate the spreadsheet.
+///
+/// # Description
+/// Interprets and executes a command string, such as scrolling, setting cell values, or advanced operations like sorting or autofilling.
+/// Supports commands like `w`, `s`, `a`, `d` for scrolling, `undo`, `redo`, `FORMULA`, `ROWDEL`, `COLDEL`, `COPY`, `CUT`, `PASTE`, `GRAPH`, `scroll_to`, and cell assignments (e.g., `A1=5`).
+/// Returns an error message if the command is invalid or fails, or `None` on success.
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet.
+/// * `command` - The command string to process.
+///
+/// # Returns
+/// An `Option<String>` containing an error message if the command fails, or `None` if successful.
+///
+/// # Example
+/// ```
+/// use spreadsheet::{create_sheet, process_command};
+/// let mut sheet = create_sheet(5, 5, true).unwrap();
+/// assert_eq!(process_command(&mut sheet, "A1=5"), None);
+/// assert_eq!(sheet.cells[0][0].value, 5);
+/// assert_eq!(process_command(&mut sheet, "s"), None); // Scroll down
+/// assert_eq!(sheet.view_row, 0); // Limited by sheet size
+/// assert_eq!(process_command(&mut sheet, "invalid"), Some("Invalid command format".to_string()));
+/// ```
 pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
     if command.is_empty() {
         return None;
@@ -738,6 +875,22 @@ pub fn process_command(sheet: &mut Sheet, command: &str) -> Option<String> {
     }
 }
 
+/// Displays the current view of the spreadsheet in the terminal.
+///
+/// This function outputs a portion of the spreadsheet (based on the current view) to the terminal,
+/// showing column headers, row numbers, and cell values. It respects the output_enabled flag and
+/// highlights errors or circular dependencies.
+///
+/// # Arguments
+/// * `sheet` - A reference to the spreadsheet.
+///
+/// # Example
+/// ```
+/// let mut sheet = create_sheet(10, 10, false).unwrap();
+/// sheet.cells[0][0].value = 5;
+/// display_sheet(&sheet);
+/// // Outputs a 10x10 grid with "5" in A1 and zeros elsewhere
+/// ```
 pub fn display_sheet(sheet: &Sheet) {
     if !sheet.output_enabled {
         return;
@@ -813,6 +966,34 @@ pub fn display_sheet(sheet: &Sheet) {
     io::stdout().flush().unwrap();
 }
 
+/// Generates an ASCII-based graph for a range of cells.
+///
+/// # Description
+/// Creates a bar or scatter plot for the values in the specified cell range, outputting the result as a string.
+/// The graph uses ASCII characters to represent data points or bars, with labels derived from cell references.
+/// Suitable for terminal-based visualization of data.
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet.
+/// * `graph_type` - The type of graph (`GraphType::Bar` or `GraphType::Scatter`).
+/// * `start_row` - The starting row of the range (0-based).
+/// * `start_col` - The starting column of the range (0-based).
+/// * `end_row` - The ending row of the range (0-based).
+/// * `end_col` - The ending column of the range (0-based).
+///
+/// # Returns
+/// A `String` containing the ASCII representation of the graph.
+///
+/// # Example
+/// ```
+/// use spreadsheet::{create_sheet, display_graph, GraphType};
+/// let mut sheet = create_sheet(5, 5, false).unwrap();
+/// sheet.cells[0][0].value = 5;
+/// sheet.cells[1][0].value = 3;
+/// let output = display_graph(&mut sheet, GraphType::Bar, 0, 0, 1, 0);
+/// println!("{}", output);
+/// // Outputs an ASCII bar graph for A1:A2 with values 5 and 3
+/// ```
 pub fn display_graph(
     sheet: &mut Sheet,
     graph_type: GraphType,
@@ -902,6 +1083,30 @@ pub fn display_graph(
 }
 
 impl Sheet {
+    /// Retrieves a range of cells from the spreadsheet.
+    ///
+    /// # Description
+    /// Returns a 2D vector of `Cell` clones for the specified range, defined by start and end row/column indices.
+    /// Used for operations like copying or analyzing a range of cells.
+    ///
+    /// # Arguments
+    /// * `start_row` - The starting row of the range (0-based).
+    /// * `start_col` - The starting column of the range (0-based).
+    /// * `end_row` - The ending row of the range (0-based).
+    /// * `end_col` - The ending column of the range (0-based).
+    ///
+    /// # Returns
+    /// A `Vec<Vec<Cell>>` containing the cells in the specified range.
+    ///
+    /// # Example
+    /// ```
+    /// use spreadsheet::{create_sheet, Sheet};
+    /// let mut sheet = create_sheet(5, 5, false).unwrap();
+    /// sheet.cells[0][0].value = 5;
+    /// let range = sheet.get_cell_range(0, 0, 1, 1);
+    /// assert_eq!(range[0][0].value, 5);
+    /// assert_eq!(range[1][1].value, 0);
+    /// ```
     pub fn get_cell_range(
         &self,
         start_row: i32,
@@ -920,6 +1125,28 @@ impl Sheet {
         range
     }
 
+    /// Sets a range of cells in the spreadsheet.
+    ///
+    /// # Description
+    /// Updates the spreadsheet with the provided 2D vector of cells, starting at the specified row and column.
+    /// If a cell contains a formula, it is re-evaluated using `update_cell`. Ensures updates stay within spreadsheet bounds.
+    ///
+    /// # Arguments
+    /// * `start_row` - The starting row for pasting the cells (0-based).
+    /// * `start_col` - The starting column for pasting the cells (0-based).
+    /// * `values` - A 2D vector of `Cell` values to set.
+    ///
+    /// # Example
+    /// ```
+    /// use spreadsheet::{create_sheet, Sheet, Cell};
+    /// let mut sheet = create_sheet(5, 5, false).unwrap();
+    /// let mut cell = Cell::new();
+    /// cell.value = 10;
+    /// let values = vec![vec![cell; 2]; 2];
+    /// sheet.set_cell_range(0, 0, &values);
+    /// assert_eq!(sheet.cells[0][0].value, 10);
+    /// assert_eq!(sheet.cells[1][1].value, 10);
+    /// ```
     pub fn set_cell_range(&mut self, start_row: i32, start_col: i32, values: &[Vec<Cell>]) {
         for (i, row) in values.iter().enumerate() {
             for (j, cell) in row.iter().enumerate() {
@@ -939,6 +1166,30 @@ impl Sheet {
     }
 }
 
+/// Copies a range of cells to the clipboard.
+///
+/// # Description
+/// Copies the specified range of cells to the global clipboard, preserving cell data (values, formulas, formatting).
+/// Returns `false` if the range is invalid (e.g., out of bounds or start indices exceed end indices).
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet.
+/// * `start_row` - The starting row of the range (0-based).
+/// * `start_col` - The starting column of the range (0-based).
+/// * `end_row` - The ending row of the range (0-based).
+/// * `end_col` - The ending column of the range (0-based).
+///
+/// # Returns
+/// A `bool` indicating success (`true`) or failure (`false`).
+///
+/// # Example
+/// ```
+/// use spreadsheet::{create_sheet, copy_range};
+/// let mut sheet = create_sheet(5, 5, false).unwrap();
+/// sheet.cells[0][0].value = 5;
+/// assert!(copy_range(&mut sheet, 0, 0, 1, 1));
+/// assert!(!copy_range(&mut sheet, 0, 0, 6, 6)); // Out of bounds
+/// ```
 pub fn copy_range(
     sheet: &mut Sheet,
     start_row: i32,
@@ -957,6 +1208,7 @@ pub fn copy_range(
         *CLIPBOARD.lock().unwrap() = Some(Clipboard {
             contents,
             is_cut: false,
+            // source_range: None,
         });
         true
     } else {
@@ -964,6 +1216,31 @@ pub fn copy_range(
     }
 }
 
+/// Cuts a range of cells to the clipboard, clearing the source.
+///
+/// # Description
+/// Copies the specified range of cells to the global clipboard and clears the source cells in the spreadsheet.
+/// Returns `false` if the range is invalid (e.g., out of bounds or start indices exceed end indices).
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet.
+/// * `start_row` - The starting row of the range (0-based).
+/// * `start_col` - The starting column of the range (0-based).
+/// * `end_row` - The ending row of the range (0-based).
+/// * `end_col` - The ending column of the range (0-based).
+///
+/// # Returns
+/// A `bool` indicating success (`true`) or failure (`false`).
+///
+/// # Example
+/// ```
+/// use spreadsheet::{create_sheet, cut_range};
+/// let mut sheet = create_sheet(5, 5, false).unwrap();
+/// sheet.cells[0][0].value = 5;
+/// assert!(cut_range(&mut sheet, 0, 0, 1, 1));
+/// assert_eq!(sheet.cells[0][0].value, 0); // Source cleared
+/// assert!(!cut_range(&mut sheet, 0, 0, 6, 6)); // Out of bounds
+/// ```
 pub fn cut_range(
     sheet: &mut Sheet,
     start_row: i32,
@@ -988,6 +1265,7 @@ pub fn cut_range(
         *CLIPBOARD.lock().unwrap() = Some(Clipboard {
             contents,
             is_cut: true,
+            //source_range: Some((start_row, start_col, end_row, end_col)),
         });
         true
     } else {
@@ -995,6 +1273,31 @@ pub fn cut_range(
     }
 }
 
+/// Pastes the clipboard contents to the specified location.
+///
+/// # Description
+/// Pastes the contents of the global clipboard to the spreadsheet starting at the specified cell.
+/// If the operation is a cut, the clipboard is cleared after pasting. Displays the updated sheet if successful.
+/// Returns `false` if the clipboard is empty or the target location is invalid.
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet.
+/// * `start_row` - The starting row for pasting (0-based).
+/// * `start_col` - The starting column for pasting (0-based).
+///
+/// # Returns
+/// A `bool` indicating success (`true`) or failure (`false`).
+///
+/// # Example
+/// ```
+/// use spreadsheet::{create_sheet, copy_range, paste_range};
+/// let mut sheet = create_sheet(5, 5, false).unwrap();
+/// sheet.cells[0][0].value = 5;
+/// copy_range(&mut sheet, 0, 0, 0, 0);
+/// assert!(paste_range(&mut sheet, 1, 1));
+/// assert_eq!(sheet.cells[1][1].value, 5);
+/// assert!(!paste_range(&mut sheet, 6, 6)); // Invalid target
+/// ```
 pub fn paste_range(sheet: &mut Sheet, start_row: i32, start_col: i32) -> bool {
     let success = {
         let mut clipboard = CLIPBOARD.lock().unwrap();
