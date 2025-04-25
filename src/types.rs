@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DependencyType {
     Single {
         row: i32,
@@ -21,7 +21,7 @@ pub struct CellDependencies {
     pub dependents: Vec<DependencyType>,   // Cells that depend on this cell
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum PatternType {
     Constant(i32),
     Arithmetic(i32, i32),
@@ -32,7 +32,7 @@ pub enum PatternType {
     Unknown,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Cell {
     pub value: i32,
     pub formula: Option<String>,
@@ -65,6 +65,7 @@ pub struct SheetState {
     pub dependency_graph: HashMap<(i32, i32), CellDependencies>,
 }
 
+#[derive(Default)]
 pub struct Sheet {
     pub cells: Vec<Vec<Cell>>,
     pub rows: i32,
@@ -74,6 +75,8 @@ pub struct Sheet {
     pub output_enabled: bool,
     pub circular_dependency_detected: bool,
     pub extension_enabled: bool,
+    pub command_history: Vec<String>,
+    pub command_position: usize,
     pub max_history_size: usize,
     pub dependency_graph: HashMap<(i32, i32), CellDependencies>,
     pub undo_stack: Vec<SheetState>,
@@ -90,6 +93,7 @@ pub enum GraphType {
 pub struct Clipboard {
     pub contents: Vec<Vec<Cell>>,
     pub is_cut: bool,
+    pub source_range: Option<(i32, i32, i32, i32)>,
 }
 
 lazy_static::lazy_static! {
