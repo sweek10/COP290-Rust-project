@@ -7,7 +7,7 @@ The project is modular, leveraging Rust's safety and performance features to ens
 This project was developed as part of the Rust Lab for the COP290 course by:              
 Shreya Bhaskar (2023CS10941)   
 Sweety Naveen Kumar (2023CS10172)   
-Sambhav Singhwi (2023CS10722)     
+Sambhav Singwi (2023CS10722)     
 
 ## Running the Program
 **Accessing the Web Interface (alternative method)** : When running the program with the --extension flag, the web interface is available at http://localhost:8000.
