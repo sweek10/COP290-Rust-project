@@ -8,6 +8,24 @@ use crate::utils::{
 use std::thread::sleep;
 use std::time::Duration;
 
+/// Updates a cell with a new formula and recalculates dependencies.
+///
+/// This function updates the cell at `(row, col)` with the provided formula, checks for circular
+/// dependencies, and updates the dependency graph. It evaluates the formula to set the cell's value
+/// and recalculates all dependent cells.
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet.
+/// * `row` - The row index of the cell.
+/// * `col` - The column index of the cell.
+/// * `formula` - The formula to set for the cell.
+///
+/// # Example
+/// ```
+/// let mut sheet = create_sheet(10, 10, false).unwrap();
+/// update_cell(&mut sheet, 0, 0, "=A2+5");
+/// assert_eq!(sheet.cells[0][0].formula, Some("=A2+5".to_string()));
+/// ```
 pub fn update_cell(sheet: &mut Sheet, row: i32, col: i32, formula: &str) {
     if row < 0
         || row >= sheet.rows
@@ -111,6 +129,30 @@ pub fn update_cell(sheet: &mut Sheet, row: i32, col: i32, formula: &str) {
     recalculate_dependents(sheet, row, col);
     crate::dependencies::reset_circular_dependency_flag(sheet);
 }
+
+/// Evaluates an expression to compute a cell's value.
+///
+/// This function evaluates an expression, which can be a numeric literal, cell reference,
+/// arithmetic expression, or function (e.g., SUM, SLEEP). It handles errors and returns
+/// the computed value and an error flag.
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet.
+/// * `expr` - The expression to evaluate.
+/// * `row` - The row index of the cell (for context).
+/// * `col` - The column index of the cell (for context).
+///
+/// # Returns
+/// A tuple `(i32, bool)` containing the computed value and a boolean indicating if an error occurred.
+///
+/// # Example
+/// ```
+/// let mut sheet = create_sheet(10, 10, false).unwrap();
+/// sheet.cells[0][0].value = 5;
+/// let (value, is_error) = evaluate_expression(&mut sheet, "=A1+5", 0, 0);
+/// assert_eq!(value, 10);
+/// assert!(!is_error);
+/// ```
 pub fn evaluate_expression(sheet: &mut Sheet, expr: &str, _row: i32, _col: i32) -> (i32, bool) {
     let mut is_error = false;
 
