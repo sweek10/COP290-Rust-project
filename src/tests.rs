@@ -1,30 +1,31 @@
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Sheet, Cell, DependencyType, CellDependencies, PatternType, GraphType};
-    use crate::sheet::{create_sheet, process_command, scroll_sheet, scroll_to_cell, undo, redo, cut_range, 
-        copy_range, paste_range, display_sheet, display_graph,
-    };
-    use crate::cell::{update_cell, evaluate_expression};
-    use crate::utils::{
-        parse_cell_reference, parse_range, calculate_range_function, evaluate_arithmetic,
-        detect_pattern, is_valid_formula, is_valid_command, triangular, is_factorial_sequence, is_triangular_sequence,factorial
-    };
-    use crate::dependencies::{has_circular_dependency, recalculate_dependents, remove_dependency};
-    use std::collections::HashMap;
-    use rocket::http::{ContentType, Status};
-    use rocket::local::blocking::Client;
-    use std::fs::File;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
-    use crate::SHEET;
-    use rocket_dyn_templates::Template;
-    use crate::scroll;
+    use crate::cell::{evaluate_expression, update_cell};
     use crate::command;
+    use crate::dependencies::{has_circular_dependency, recalculate_dependents, remove_dependency};
     use crate::index;
     use crate::load_csv_file;
     use crate::load_excel_file;
-    
+    use crate::scroll;
+    use crate::sheet::{
+        copy_range, create_sheet, cut_range, display_graph, display_sheet, paste_range,
+        process_command, redo, scroll_sheet, scroll_to_cell, undo,
+    };
+    use crate::types::{Cell, CellDependencies, DependencyType, GraphType, PatternType, Sheet};
+    use crate::utils::{
+        calculate_range_function, detect_pattern, evaluate_arithmetic, factorial,
+        is_factorial_sequence, is_triangular_sequence, is_valid_command, is_valid_formula,
+        parse_cell_reference, parse_range, triangular,
+    };
+    use crate::SHEET;
+    use rocket::http::{ContentType, Status};
+    use rocket::local::blocking::Client;
+    use rocket_dyn_templates::Template;
+    use std::collections::HashMap;
+    use std::fs::File;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
 
     // Helper function to create a test sheet
     fn create_test_sheet(rows: i32, cols: i32, extension_enabled: bool) -> Sheet {
@@ -33,7 +34,7 @@ mod tests {
 
     #[test]
     fn test_parse_cell_reference_comprehensive() {
-        let mut sheet = create_test_sheet(10, 26,false); // 10 rows, 26 cols (A-Z)
+        let mut sheet = create_test_sheet(10, 26, false); // 10 rows, 26 cols (A-Z)
 
         // Valid single-column references
         assert_eq!(parse_cell_reference(&mut sheet, "A1"), Some((0, 0)));
@@ -59,7 +60,7 @@ mod tests {
         assert_eq!(parse_cell_reference(&mut sheet, "A"), None); // Missing row
         assert_eq!(parse_cell_reference(&mut sheet, "123"), None); // Only digits
         assert_eq!(parse_cell_reference(&mut sheet, "A1B"), None); // Invalid format
-       // assert_eq!(parse_cell_reference(&mut sheet, "A-1"), None); // Negative row
+                                                                   // assert_eq!(parse_cell_reference(&mut sheet, "A-1"), None); // Negative row
 
         // Invalid: Non-alphabetic column
         assert_eq!(parse_cell_reference(&mut sheet, "1A1"), None); // Numeric column
@@ -70,11 +71,11 @@ mod tests {
         assert_eq!(parse_cell_reference(&mut sheet, "\tB2\t"), Some((1, 1))); // Trimmed tabs
 
         // Case sensitivity (expect uppercase only)
-       // assert_eq!(parse_cell_reference(&mut sheet, "a1"), None); // Lowercase invalid
+        // assert_eq!(parse_cell_reference(&mut sheet, "a1"), None); // Lowercase invalid
         assert_eq!(parse_cell_reference(&mut sheet, "Aa1"), None); // Mixed case invalid
 
         // // Small sheet bounds
-        let mut small_sheet = create_test_sheet(1, 1,false); // 1x1 sheet
+        let mut small_sheet = create_test_sheet(1, 1, false); // 1x1 sheet
         assert_eq!(parse_cell_reference(&mut small_sheet, "A1"), Some((0, 0)));
         assert_eq!(parse_cell_reference(&mut small_sheet, "A2"), None); // Row out of bounds
         assert_eq!(parse_cell_reference(&mut small_sheet, "B1"), None); // Col out of bounds
@@ -90,7 +91,6 @@ mod tests {
         assert_eq!(parse_range(&mut sheet, "B2:A1"), None); // Invalid range
     }
 
-
     #[test]
     fn test_calculate_range_function_comprehensive() {
         // Standard 10x10 sheet, extensions disabled
@@ -103,46 +103,103 @@ mod tests {
         sheet.cells[1][1].value = 4; // B2
 
         // Valid range A1:B2
-        assert_eq!(calculate_range_function(&mut sheet, "SUM", "A1:B2"), Ok(10.0)); // 1+2+3+4
-        assert_eq!(calculate_range_function(&mut sheet, "AVG", "A1:B2"), Ok(2.5)); // (1+2+3+4)/4
-        assert_eq!(calculate_range_function(&mut sheet, "MIN", "A1:B2"), Ok(1.0)); // min(1,2,3,4)
-        assert_eq!(calculate_range_function(&mut sheet, "MAX", "A1:B2"), Ok(4.0)); // max(1,2,3,4)
+        assert_eq!(
+            calculate_range_function(&mut sheet, "SUM", "A1:B2"),
+            Ok(10.0)
+        ); // 1+2+3+4
+        assert_eq!(
+            calculate_range_function(&mut sheet, "AVG", "A1:B2"),
+            Ok(2.5)
+        ); // (1+2+3+4)/4
+        assert_eq!(
+            calculate_range_function(&mut sheet, "MIN", "A1:B2"),
+            Ok(1.0)
+        ); // min(1,2,3,4)
+        assert_eq!(
+            calculate_range_function(&mut sheet, "MAX", "A1:B2"),
+            Ok(4.0)
+        ); // max(1,2,3,4)
         let stdev = calculate_range_function(&mut sheet, "STDEV", "A1:B2").unwrap();
         assert!((stdev - 1.0).abs() < 0.01); // STDEV(1,2,3,4) ≈ 1.414, rounded to 1.0
 
         // // Case insensitivity
-        assert_eq!(calculate_range_function(&mut sheet, "sum", "A1:B2"), Ok(10.0));
-        assert_eq!(calculate_range_function(&mut sheet, "StDeV", "A1:B2"), Ok(1.0));
+        assert_eq!(
+            calculate_range_function(&mut sheet, "sum", "A1:B2"),
+            Ok(10.0)
+        );
+        assert_eq!(
+            calculate_range_function(&mut sheet, "StDeV", "A1:B2"),
+            Ok(1.0)
+        );
 
         // // Single-cell range (A1 = 1)
-        assert_eq!(calculate_range_function(&mut sheet, "SUM", "A1:A1"), Ok(1.0));
-        assert_eq!(calculate_range_function(&mut sheet, "AVG", "A1:A1"), Ok(1.0));
-        assert_eq!(calculate_range_function(&mut sheet, "MIN", "A1:A1"), Ok(1.0));
-        assert_eq!(calculate_range_function(&mut sheet, "MAX", "A1:A1"), Ok(1.0));
-       // assert_eq!(calculate_range_function(&mut sheet, "STDEV", "A1:A1"), Ok(1.0)); // Single value
+        assert_eq!(
+            calculate_range_function(&mut sheet, "SUM", "A1:A1"),
+            Ok(1.0)
+        );
+        assert_eq!(
+            calculate_range_function(&mut sheet, "AVG", "A1:A1"),
+            Ok(1.0)
+        );
+        assert_eq!(
+            calculate_range_function(&mut sheet, "MIN", "A1:A1"),
+            Ok(1.0)
+        );
+        assert_eq!(
+            calculate_range_function(&mut sheet, "MAX", "A1:A1"),
+            Ok(1.0)
+        );
+        // assert_eq!(calculate_range_function(&mut sheet, "STDEV", "A1:A1"), Ok(1.0)); // Single value
 
         // Range with zero values (A3:B3 = [0, 0])
         sheet.cells[2][0].value = 0; // A3
         sheet.cells[2][1].value = 0; // B3
-        assert_eq!(calculate_range_function(&mut sheet, "SUM", "A3:B3"), Ok(0.0));
-        assert_eq!(calculate_range_function(&mut sheet, "AVG", "A3:B3"), Ok(0.0));
-        assert_eq!(calculate_range_function(&mut sheet, "MIN", "A3:B3"), Ok(0.0));
-        assert_eq!(calculate_range_function(&mut sheet, "MAX", "A3:B3"), Ok(0.0));
+        assert_eq!(
+            calculate_range_function(&mut sheet, "SUM", "A3:B3"),
+            Ok(0.0)
+        );
+        assert_eq!(
+            calculate_range_function(&mut sheet, "AVG", "A3:B3"),
+            Ok(0.0)
+        );
+        assert_eq!(
+            calculate_range_function(&mut sheet, "MIN", "A3:B3"),
+            Ok(0.0)
+        );
+        assert_eq!(
+            calculate_range_function(&mut sheet, "MAX", "A3:B3"),
+            Ok(0.0)
+        );
         // assert_eq!(calculate_range_function(&mut sheet, "STDEV", "A3:B3"), Ok(0.0)); // Same values
 
         // // Error: Invalid range
-        assert_eq!(calculate_range_function(&mut sheet, "SUM", "A1:Z10"), Err(())); // Out of bounds
-        assert_eq!(calculate_range_function(&mut sheet, "AVG", "INVALID"), Err(())); // Malformed
-        assert_eq!(calculate_range_function(&mut sheet, "MIN", "B1:A1"), Err(())); // Reverse range
+        assert_eq!(
+            calculate_range_function(&mut sheet, "SUM", "A1:Z10"),
+            Err(())
+        ); // Out of bounds
+        assert_eq!(
+            calculate_range_function(&mut sheet, "AVG", "INVALID"),
+            Err(())
+        ); // Malformed
+        assert_eq!(
+            calculate_range_function(&mut sheet, "MIN", "B1:A1"),
+            Err(())
+        ); // Reverse range
 
         // // Error: Cell with error
         sheet.cells[0][0].is_error = true; // A1 has error
-        assert_eq!(calculate_range_function(&mut sheet, "SUM", "A1:B2"), Err(()));
+        assert_eq!(
+            calculate_range_function(&mut sheet, "SUM", "A1:B2"),
+            Err(())
+        );
         sheet.cells[0][0].is_error = false;
         //  // Reset
 
         // // Error: Invalid function
-        assert_eq!(calculate_range_function(&mut sheet, "INVALID", "A1:B2"), Err(()));
+        assert_eq!(
+            calculate_range_function(&mut sheet, "INVALID", "A1:B2"),
+            Err(())
+        );
         assert_eq!(calculate_range_function(&mut sheet, "", "A1:B2"), Err(()));
 
         // // STDEV with two values (A4:B4 = [5, 7])
@@ -158,17 +215,32 @@ mod tests {
                 large_sheet.cells[i][j].value = (i + j + 1) as i32; // A1:E5 = 1,2,...,9
             }
         }
-        assert_eq!(calculate_range_function(&mut large_sheet, "SUM", "A1:E5"), Ok(125.0)); // Sum of 1 to 9
-        assert_eq!(calculate_range_function(&mut large_sheet, "AVG", "A1:E5"), Ok(5.0)); // (1+2+...+9)/25
-        assert_eq!(calculate_range_function(&mut large_sheet, "MIN", "A1:E5"), Ok(1.0));
-        assert_eq!(calculate_range_function(&mut large_sheet, "MAX", "A1:E5"), Ok(9.0));
+        assert_eq!(
+            calculate_range_function(&mut large_sheet, "SUM", "A1:E5"),
+            Ok(125.0)
+        ); // Sum of 1 to 9
+        assert_eq!(
+            calculate_range_function(&mut large_sheet, "AVG", "A1:E5"),
+            Ok(5.0)
+        ); // (1+2+...+9)/25
+        assert_eq!(
+            calculate_range_function(&mut large_sheet, "MIN", "A1:E5"),
+            Ok(1.0)
+        );
+        assert_eq!(
+            calculate_range_function(&mut large_sheet, "MAX", "A1:E5"),
+            Ok(9.0)
+        );
         // let stdev = calculate_range_function(&mut large_sheet, "STDEV", "A1:E5").unwrap();
         // assert!((stdev - 3.0).abs() < 0.01); // STDEV(1,2,...,9) ≈ 2.582, rounded to 3.0
 
         // // Small 1x1 sheet
         let mut small_sheet = create_test_sheet(1, 1, false);
         small_sheet.cells[0][0].value = 42;
-        assert_eq!(calculate_range_function(&mut small_sheet, "SUM", "A1:A1"), Ok(42.0));
+        assert_eq!(
+            calculate_range_function(&mut small_sheet, "SUM", "A1:A1"),
+            Ok(42.0)
+        );
         // assert_eq!(calculate_range_function(&mut small_sheet, "STDEV", "A1:A1"), Ok(0.0));
     }
 
@@ -259,8 +331,12 @@ mod tests {
         // Verify dependencies
         let deps = sheet.dependency_graph.get(&(1, 0)).unwrap();
         assert_eq!(deps.dependencies.len(), 2);
-        assert!(deps.dependencies.contains(&DependencyType::Single { row: 0, col: 0 }));
-        assert!(deps.dependencies.contains(&DependencyType::Single { row: 0, col: 1 }));
+        assert!(deps
+            .dependencies
+            .contains(&DependencyType::Single { row: 0, col: 0 }));
+        assert!(deps
+            .dependencies
+            .contains(&DependencyType::Single { row: 0, col: 1 }));
     }
 
     // #[test]
@@ -429,7 +505,6 @@ mod tests {
     //     assert_eq!(sheet.cells[5][0].value, 12);
     // }
 
-
     #[test]
     fn test_is_valid_formula_comprehensive() {
         let mut sheet = create_test_sheet(10, 10, true); // Extensions disabled
@@ -452,7 +527,7 @@ mod tests {
         assert!(is_valid_formula(&mut sheet, "B2/2"));
         assert!(is_valid_formula(&mut sheet, "A1 + B2 * 3")); // Multiple operators
         assert!(!is_valid_formula(&mut sheet, "A1+INVALID")); // Invalid part
-       // assert!(!is_valid_formula(&mut sheet, "A1++B2")); // Invalid operator sequence
+                                                              // assert!(!is_valid_formula(&mut sheet, "A1++B2")); // Invalid operator sequence
 
         // // Range functions
         assert!(is_valid_formula(&mut sheet, "SUM(A1:B2)"));
@@ -464,7 +539,6 @@ mod tests {
         assert!(!is_valid_formula(&mut sheet, "SUM(INVALID)")); // Invalid range
         assert!(!is_valid_formula(&mut sheet, "SUM(A1:B2")); // Missing parenthesis
 
-
         // // Whitespace handling
         assert!(is_valid_formula(&mut sheet, " A1 "));
         assert!(is_valid_formula(&mut sheet, "\tSUM(A1:B2)\t"));
@@ -472,7 +546,7 @@ mod tests {
 
         // // Empty or malformed
         assert!(!is_valid_formula(&mut sheet, ""));
-     //   assert!(!is_valid_formula(&mut sheet, "+-*/")); // Only operators
+        //   assert!(!is_valid_formula(&mut sheet, "+-*/")); // Only operators
         assert!(!is_valid_formula(&mut sheet, "SUM(")); // Incomplete function
 
         // // Small 1x1 sheet
@@ -494,18 +568,18 @@ mod tests {
         assert!(is_valid_command(&mut sheet, "q"));
         assert!(!is_valid_command(&mut sheet, "x")); // Invalid single character
 
-    //     // Output control commands
+        //     // Output control commands
         assert!(is_valid_command(&mut sheet, "disable_output"));
         assert!(is_valid_command(&mut sheet, "enable_output"));
         assert!(!is_valid_command(&mut sheet, "output_invalid")); // Invalid output command
 
-    //     // Scroll commands
+        //     // Scroll commands
         assert!(is_valid_command(&mut sheet, "scroll_to A1"));
         assert!(is_valid_command(&mut sheet, "scroll_to B2"));
         assert!(!is_valid_command(&mut sheet, "scroll_to A11")); // Out of bounds
         assert!(!is_valid_command(&mut sheet, "scroll_to INVALID")); // Invalid reference
 
-    //     // Cell assignments
+        //     // Cell assignments
         assert!(is_valid_command(&mut sheet, "A1=42"));
         assert!(is_valid_command(&mut sheet, "B2=A1+5"));
         assert!(is_valid_command(&mut sheet, "A1=SUM(A1:B2)"));
@@ -514,7 +588,7 @@ mod tests {
         assert!(!is_valid_command(&mut sheet, "A1=")); // Empty formula
         assert!(!is_valid_command(&mut sheet, "=42")); // Missing cell reference
 
-    //     // Extension commands (should fail when extensions disabled)
+        //     // Extension commands (should fail when extensions disabled)
         assert!(!is_valid_command(&mut sheet, "undo"));
         assert!(!is_valid_command(&mut sheet, "redo"));
         assert!(!is_valid_command(&mut sheet, "FORMULA A1"));
@@ -525,9 +599,9 @@ mod tests {
         assert!(!is_valid_command(&mut sheet, "CUT A1:B2"));
         assert!(!is_valid_command(&mut sheet, "PASTE A1"));
 
-    //     // Whitespace handling
+        //     // Whitespace handling
         assert!(is_valid_command(&mut sheet, " A1=42 "));
-      //  assert!(is_valid_command(&mut sheet, "\tscroll_to A1\t"));
+        //  assert!(is_valid_command(&mut sheet, "\tscroll_to A1\t"));
         assert!(!is_valid_command(&mut sheet, " A1=INVALID "));
 
         // Empty or malformed
@@ -535,7 +609,7 @@ mod tests {
         assert!(!is_valid_command(&mut sheet, "INVALID"));
         assert!(!is_valid_command(&mut sheet, "="));
 
-    //     // Small 1x1 sheet
+        //     // Small 1x1 sheet
         let mut small_sheet = create_test_sheet(1, 1, false);
         assert!(is_valid_command(&mut small_sheet, "A1=42"));
         assert!(!is_valid_command(&mut small_sheet, "A2=42")); // Out of bounds
@@ -611,13 +685,13 @@ mod tests {
     //    // assert!(is_valid_command(&mut sheet, "PASTE")); // No argument, valid per code
     // }
 
-        #[test]
+    #[test]
     fn test_factorial() {
         assert_eq!(factorial(0), 1);
         assert_eq!(factorial(1), 1);
         assert_eq!(factorial(5), 120); // 5! = 120
         assert_eq!(factorial(10), 3_628_800); // 10! = 3,628,800
-        // Note: factorial(13) overflows i32 (6,227,020,800 > i32::MAX)
+                                              // Note: factorial(13) overflows i32 (6,227,020,800 > i32::MAX)
         assert!(factorial(12) > 0); // Verify non-overflow up to 12
     }
 
@@ -635,7 +709,10 @@ mod tests {
         assert_eq!(is_factorial_sequence(&[]), None);
 
         // Valid factorial sequence
-        assert_eq!(is_factorial_sequence(&[120, 24, 6, 2, 1, 1]), Some((120,6))); // 5!, 4!, 3!, 2!, 1!
+        assert_eq!(
+            is_factorial_sequence(&[120, 24, 6, 2, 1, 1]),
+            Some((120, 6))
+        ); // 5!, 4!, 3!, 2!, 1!
         assert_eq!(is_factorial_sequence(&[1]), Some((1, 1))); // Single value, n=1
 
         // Invalid factorial sequence
@@ -650,7 +727,7 @@ mod tests {
         assert_eq!(is_triangular_sequence(&[]), None);
 
         // Valid triangular sequence
-        assert_eq!(is_triangular_sequence(&[15, 10, 6, 3, 1]), Some((15,6))); // T(5), T(4), T(3), T(2), T(1)
+        assert_eq!(is_triangular_sequence(&[15, 10, 6, 3, 1]), Some((15, 6))); // T(5), T(4), T(3), T(2), T(1)
         assert_eq!(is_triangular_sequence(&[1]), Some((1, 2))); // Single value, n=1
 
         // Invalid triangular sequence
@@ -671,14 +748,14 @@ mod tests {
     //         ..Default::default()
     //     };
 
-        // // Row case (start_row == end_row)
-        // sheet.cells[5][4].value = 120; // A6 = 5!
-        // sheet.cells[5][3].value = 24;  // B6 = 4!
-        // sheet.cells[5][2].value = 6;   // C6 = 3!
-        // sheet.cells[5][1].value = 2;   // D6 = 2!
-        // sheet.cells[5][0].value = 1;   // E6 = 1!
-        // let result = detect_pattern(&sheet, 5, 5, 5, 5); // Start at E6 (col 5), look left
-        // assert_eq!(result, PatternType::Factorial(1, 6)); // Updated to match next_index
+    // // Row case (start_row == end_row)
+    // sheet.cells[5][4].value = 120; // A6 = 5!
+    // sheet.cells[5][3].value = 24;  // B6 = 4!
+    // sheet.cells[5][2].value = 6;   // C6 = 3!
+    // sheet.cells[5][1].value = 2;   // D6 = 2!
+    // sheet.cells[5][0].value = 1;   // E6 = 1!
+    // let result = detect_pattern(&sheet, 5, 5, 5, 5); // Start at E6 (col 5), look left
+    // assert_eq!(result, PatternType::Factorial(1, 6)); // Updated to match next_index
 
     //     // Column case (start_col == end_col)
     //     sheet.cells[4][5].value = 15;  // A6 = T(5)
@@ -688,7 +765,6 @@ mod tests {
     //     sheet.cells[0][5].value = 1;   // A2 = T(1)
     //     let result = detect_pattern(&sheet, 5, 5, 0, 5); // Start at A6 (row 5), look up to row 0
     //     assert_eq!(result, PatternType::Triangular(15, 6)); // Updated next_index
-
 
     //     // Constant pattern
     //     sheet.cells[5][4].value = 5; // E6
@@ -749,7 +825,16 @@ mod tests {
             cols: 50,
             view_row: 20,
             view_col: 20,
-            cells: vec![vec![Cell { value: 0, ..Default::default() }; 50]; 50],
+            cells: vec![
+                vec![
+                    Cell {
+                        value: 0,
+                        ..Default::default()
+                    };
+                    50
+                ];
+                50
+            ],
             dependency_graph: Default::default(),
             extension_enabled: false,
             ..Default::default()
@@ -775,7 +860,7 @@ mod tests {
         assert_eq!(sheet.view_row, 50 - 10); // Partial to 40
         sheet.view_row = 45;
         scroll_sheet(&mut sheet, 's');
-    // assert_eq!(sheet.view_row, 50 - 10); // Max bound
+        // assert_eq!(sheet.view_row, 50 - 10); // Max bound
         sheet.view_row = 50 - 10;
         scroll_sheet(&mut sheet, 's');
         assert_eq!(sheet.view_row, 50 - 10); // No change at max
@@ -820,7 +905,16 @@ mod tests {
             cols: 50,
             view_row: 20,
             view_col: 20,
-            cells: vec![vec![Cell { value: 0, ..Default::default() }; 50]; 50],
+            cells: vec![
+                vec![
+                    Cell {
+                        value: 0,
+                        ..Default::default()
+                    };
+                    50
+                ];
+                50
+            ],
             dependency_graph: Default::default(),
             extension_enabled: false,
             ..Default::default()
@@ -848,7 +942,6 @@ mod tests {
         assert_eq!(sheet.view_row, original_row);
         assert_eq!(sheet.view_col, original_col);
     }
-
 
     // Mock parse_cell_reference to return (row, col)
     fn mock_parse_cell_reference(_sheet: &Sheet, cell_ref: &str) -> Option<(i32, i32)> {
@@ -884,16 +977,54 @@ mod tests {
 
     fn mock_undo(_sheet: &mut Sheet) {}
     fn mock_redo(_sheet: &mut Sheet) {}
-    fn mock_copy_range(_sheet: &mut Sheet, _start_row: i32, _start_col: i32, _end_row: i32, _end_col: i32) -> bool { true }
-    fn mock_cut_range(_sheet: &mut Sheet, _start_row: i32, _start_col: i32, _end_row: i32, _end_col: i32) -> bool { true }
-    fn mock_paste_range(_sheet: &mut Sheet, _row: i32, _col: i32) -> bool { true }
+    fn mock_copy_range(
+        _sheet: &mut Sheet,
+        _start_row: i32,
+        _start_col: i32,
+        _end_row: i32,
+        _end_col: i32,
+    ) -> bool {
+        true
+    }
+    fn mock_cut_range(
+        _sheet: &mut Sheet,
+        _start_row: i32,
+        _start_col: i32,
+        _end_row: i32,
+        _end_col: i32,
+    ) -> bool {
+        true
+    }
+    fn mock_paste_range(_sheet: &mut Sheet, _row: i32, _col: i32) -> bool {
+        true
+    }
     fn mock_display_sheet(_sheet: &Sheet) {}
-    fn mock_display_graph(_sheet: &Sheet, _graph_type: GraphType, _start_row: i32, _start_col: i32, _end_row: i32, _end_col: i32) {}
-    fn mock_remove_dependency(_sheet: &mut Sheet, _row: i32, _col: i32, _dep_row: i32, _dep_col: i32, _is_dep: bool) {}
+    fn mock_display_graph(
+        _sheet: &Sheet,
+        _graph_type: GraphType,
+        _start_row: i32,
+        _start_col: i32,
+        _end_row: i32,
+        _end_col: i32,
+    ) {
+    }
+    fn mock_remove_dependency(
+        _sheet: &mut Sheet,
+        _row: i32,
+        _col: i32,
+        _dep_row: i32,
+        _dep_col: i32,
+        _is_dep: bool,
+    ) {
+    }
     fn mock_add_to_history(_sheet: &mut Sheet, _command: &str) {}
     fn mock_update_cell(_sheet: &mut Sheet, _row: i32, _col: i32, _formula: &str) {}
-    fn mock_triangular(_n: i32) -> i32 { 0 }
-    fn mock_factorial(_n: i32) -> i32 { 0 }
+    fn mock_triangular(_n: i32) -> i32 {
+        0
+    }
+    fn mock_factorial(_n: i32) -> i32 {
+        0
+    }
 
     #[test]
     fn test_process_command() {
@@ -902,16 +1033,22 @@ mod tests {
             cols: 10,
             view_row: 5,
             view_col: 5,
-            cells: vec![vec![Cell {
-                value: 0,
-                formula: None,
-                is_formula: false,
-                is_error: false,
-                is_bold: false,
-                is_italic: false,
-                is_underline: false,
-                ..Default::default()
-            }; 10]; 10],
+            cells: vec![
+                vec![
+                    Cell {
+                        value: 0,
+                        formula: None,
+                        is_formula: false,
+                        is_error: false,
+                        is_bold: false,
+                        is_italic: false,
+                        is_underline: false,
+                        ..Default::default()
+                    };
+                    10
+                ];
+                10
+            ],
             dependency_graph: HashMap::new(),
             output_enabled: true,
             extension_enabled: false,
@@ -932,7 +1069,7 @@ mod tests {
         assert_eq!(sheet.view_row, 0); // Mocked
         process_command(&mut sheet, "d");
         assert_eq!(sheet.view_col, 0); // Mocked
-        // 'q' would exit, but test won't run it
+                                       // 'q' would exit, but test won't run it
         process_command(&mut sheet, "x");
         assert_eq!(sheet.view_row, 0);
         assert_eq!(sheet.view_col, 0);
@@ -987,7 +1124,6 @@ mod tests {
         process_command(&mut sheet, "A1="); // Invalid format
         assert_eq!(sheet.view_row, 4); // No change
     }
-
 
     #[test]
     fn test_no_dependencies() {
@@ -1105,83 +1241,86 @@ mod tests {
         // Pre-insert dependencies for A1
         let original_deps = CellDependencies {
             dependencies: vec![DependencyType::Single { row: 2, col: 2 }], // A1 depends on C3
-            dependents: vec![DependencyType::Single { row: 3, col: 3 }], // D4 depends on A1
+            dependents: vec![DependencyType::Single { row: 3, col: 3 }],   // D4 depends on A1
         };
         sheet.dependency_graph.insert((0, 0), original_deps.clone());
         let formula = "B2"; // New formula
         let result = has_circular_dependency(&mut sheet, 0, 0, formula);
         assert_eq!(result, false);
         // Verify original dependencies restored
-        let restored_deps = sheet.dependency_graph.get(&(0, 0)).expect("Dependencies should exist");
+        let restored_deps = sheet
+            .dependency_graph
+            .get(&(0, 0))
+            .expect("Dependencies should exist");
         assert_eq!(restored_deps.dependencies, original_deps.dependencies);
         assert_eq!(restored_deps.dependents, original_deps.dependents);
     }
 
-        // Tests for load_csv_file
-        #[test]
-        fn test_load_csv_file_valid() {
-            let mut sheet = create_test_sheet(5, 5, true);
-            let mut temp_file = NamedTempFile::new().unwrap();
-            writeln!(temp_file, "10,=A1+1,20\n30,,40").unwrap();
-            let path = temp_file.path().to_str().unwrap();
-    
-            let result = load_csv_file(&mut sheet, path);
-            assert!(result.is_ok());
-            assert_eq!(sheet.cells[0][0].value, 10); // A1
-            assert_eq!(sheet.cells[0][2].value, 20); // C1
-            assert_eq!(sheet.cells[1][0].value, 30); // A2
-            assert_eq!(sheet.cells[1][2].value, 40); // C2
-            // Verify formula in B1 (=A1+1)
-            assert_eq!(sheet.cells[0][1].value, 11); // B1 should compute to 10+1
-        }
-    
-        #[test]
-        fn test_load_csv_file_too_many_rows() {
-            let mut sheet = create_test_sheet(2, 5, true);
-            let mut temp_file = NamedTempFile::new().unwrap();
-            writeln!(temp_file, "1,2,3\n4,5,6\n7,8,9").unwrap();
-            let path = temp_file.path().to_str().unwrap();
-    
-            let result = load_csv_file(&mut sheet, path);
-            assert!(result.is_err());
-            assert_eq!(
-                result.unwrap_err(),
-                "CSV file has more rows than the spreadsheet (max: 2)"
-            );
-        }
-    
-        #[test]
-        fn test_load_csv_file_too_many_cols() {
-            let mut sheet = create_test_sheet(5, 2, true);
-            let mut temp_file = NamedTempFile::new().unwrap();
-            writeln!(temp_file, "1,2,3").unwrap();
-            let path = temp_file.path().to_str().unwrap();
-    
-            let result = load_csv_file(&mut sheet, path);
-            assert!(result.is_err());
-            assert_eq!(
-                result.unwrap_err(),
-                "CSV file has more columns than the spreadsheet (max: 2)"
-            );
-        }
-    
-        #[test]
-        fn test_load_csv_file_invalid_path() {
-            let mut sheet = create_test_sheet(5, 5, true);
-            let result = load_csv_file(&mut sheet, "nonexistent.csv");
-            assert!(result.is_err());
-            assert!(result.unwrap_err().starts_with("Failed to open CSV file"));
-        }
-    
-        // Tests for load_excel_file
-        // Note: calamine requires actual Excel files, so we simulate minimal behavior
-        #[test]
-        fn test_load_excel_file_invalid_path() {
-            let mut sheet = create_test_sheet(5, 5, true);
-            let result = load_excel_file(&mut sheet, "nonexistent.xlsx");
-            assert!(result.is_err());
-            assert!(result.unwrap_err().starts_with("Failed to open Excel file"));
-        }
+    // Tests for load_csv_file
+    #[test]
+    fn test_load_csv_file_valid() {
+        let mut sheet = create_test_sheet(5, 5, true);
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "10,=A1+1,20\n30,,40").unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        let result = load_csv_file(&mut sheet, path);
+        assert!(result.is_ok());
+        assert_eq!(sheet.cells[0][0].value, 10); // A1
+        assert_eq!(sheet.cells[0][2].value, 20); // C1
+        assert_eq!(sheet.cells[1][0].value, 30); // A2
+        assert_eq!(sheet.cells[1][2].value, 40); // C2
+                                                 // Verify formula in B1 (=A1+1)
+        assert_eq!(sheet.cells[0][1].value, 11); // B1 should compute to 10+1
+    }
+
+    #[test]
+    fn test_load_csv_file_too_many_rows() {
+        let mut sheet = create_test_sheet(2, 5, true);
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "1,2,3\n4,5,6\n7,8,9").unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        let result = load_csv_file(&mut sheet, path);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            "CSV file has more rows than the spreadsheet (max: 2)"
+        );
+    }
+
+    #[test]
+    fn test_load_csv_file_too_many_cols() {
+        let mut sheet = create_test_sheet(5, 2, true);
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "1,2,3").unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        let result = load_csv_file(&mut sheet, path);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            "CSV file has more columns than the spreadsheet (max: 2)"
+        );
+    }
+
+    #[test]
+    fn test_load_csv_file_invalid_path() {
+        let mut sheet = create_test_sheet(5, 5, true);
+        let result = load_csv_file(&mut sheet, "nonexistent.csv");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().starts_with("Failed to open CSV file"));
+    }
+
+    // Tests for load_excel_file
+    // Note: calamine requires actual Excel files, so we simulate minimal behavior
+    #[test]
+    fn test_load_excel_file_invalid_path() {
+        let mut sheet = create_test_sheet(5, 5, true);
+        let result = load_excel_file(&mut sheet, "nonexistent.xlsx");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().starts_with("Failed to open Excel file"));
+    }
 
     #[test]
     fn test_process_command_scroll() {
@@ -1319,53 +1458,52 @@ mod tests {
     #[test]
     fn test_autofill_vertical_constant() {
         let mut sheet = create_test_sheet(10, 5, true);
-        
+
         // Set up Fibonacci sequence (1, 1, 2, 3)
         process_command(&mut sheet, "A1 = 5");
         process_command(&mut sheet, "A2 = 5");
         process_command(&mut sheet, "A3 = 5");
-        
+
         // Trigger autofill for next 3 cells
         process_command(&mut sheet, "A4 = AUTOFILL(A4:A6)");
-        
+
         // Verify Fibonacci continuation (5, 8, 13)
-        assert_eq!(sheet.cells[3][0].value, 5);  // A5
-        assert_eq!(sheet.cells[4][0].value, 5);  // A6
+        assert_eq!(sheet.cells[3][0].value, 5); // A5
+        assert_eq!(sheet.cells[4][0].value, 5); // A6
         assert_eq!(sheet.cells[5][0].value, 5); // A7
     }
-
 
     #[test]
     fn test_autofill_vertical_fibonacci() {
         let mut sheet = create_test_sheet(10, 5, true);
-        
+
         // Set up Fibonacci sequence (1, 1, 2, 3)
         process_command(&mut sheet, "A1 = 1");
         process_command(&mut sheet, "A2 = 1");
         process_command(&mut sheet, "A3 = 2");
         process_command(&mut sheet, "A4 = 3");
-        
+
         // Trigger autofill for next 3 cells
         process_command(&mut sheet, "A5 = AUTOFILL(A5:A7)");
-        
+
         // Verify Fibonacci continuation (5, 8, 13)
-        assert_eq!(sheet.cells[4][0].value, 5);  // A5
-        assert_eq!(sheet.cells[5][0].value, 8);  // A6
+        assert_eq!(sheet.cells[4][0].value, 5); // A5
+        assert_eq!(sheet.cells[5][0].value, 8); // A6
         assert_eq!(sheet.cells[6][0].value, 13); // A7
     }
 
     #[test]
     fn test_autofill_vertical_geometric() {
         let mut sheet = create_test_sheet(10, 5, true);
-        
+
         // Set up geometric sequence (2, 4, 8)
         process_command(&mut sheet, "A1 = 2");
         process_command(&mut sheet, "A2 = 4");
         process_command(&mut sheet, "A3 = 8");
-        
+
         // Trigger autofill for next 3 cells
         process_command(&mut sheet, "A4 = AUTOFILL(A4:A6)");
-        
+
         // Verify geometric continuation (16, 32, 64)
         assert_eq!(sheet.cells[3][0].value, 16);
         assert_eq!(sheet.cells[4][0].value, 32);
@@ -1375,33 +1513,33 @@ mod tests {
     #[test]
     fn test_autofill_vertical_factorial() {
         let mut sheet = create_test_sheet(10, 5, true);
-        
+
         // Set up factorial sequence (1, 2, 6)
-        process_command(&mut sheet, "A1 = 1");  // 1!
-        process_command(&mut sheet, "A2 = 2");  // 2!
-        process_command(&mut sheet, "A3 = 6");  // 3!
-        
+        process_command(&mut sheet, "A1 = 1"); // 1!
+        process_command(&mut sheet, "A2 = 2"); // 2!
+        process_command(&mut sheet, "A3 = 6"); // 3!
+
         // Trigger autofill for next 3 cells
         process_command(&mut sheet, "A4 = AUTOFILL(A4:A6)");
-        
+
         // Verify factorial continuation (24, 120, 720)
-        assert_eq!(sheet.cells[3][0].value, 24);  // 4!
+        assert_eq!(sheet.cells[3][0].value, 24); // 4!
         assert_eq!(sheet.cells[4][0].value, 120); // 5!
-        assert_eq!(sheet.cells[5][0].value,720); 
+        assert_eq!(sheet.cells[5][0].value, 720);
     }
 
     #[test]
     fn test_autofill_vertical_triangular() {
         let mut sheet = create_test_sheet(10, 5, true);
-        
+
         // Set up triangular numbers (1, 3, 6)
-        process_command(&mut sheet, "A1 = 1");  // 1st triangular
-        process_command(&mut sheet, "A2 = 3");  // 2nd
-        process_command(&mut sheet, "A3 = 6");  // 3rd
-        
+        process_command(&mut sheet, "A1 = 1"); // 1st triangular
+        process_command(&mut sheet, "A2 = 3"); // 2nd
+        process_command(&mut sheet, "A3 = 6"); // 3rd
+
         // Trigger autofill for next 3 cells
         process_command(&mut sheet, "A4 = AUTOFILL(A4:A6)");
-        
+
         // Verify triangular continuation (10, 15, 21)
         assert_eq!(sheet.cells[3][0].value, 10);
         assert_eq!(sheet.cells[4][0].value, 15);
@@ -1411,121 +1549,118 @@ mod tests {
     #[test]
     fn test_autofill_horizontal_fibonacci() {
         let mut sheet = create_test_sheet(5, 10, true);
-        
+
         // Set up Fibonacci sequence (1, 1, 2)
         process_command(&mut sheet, "A1 = 1");
         process_command(&mut sheet, "B1 = 2");
         process_command(&mut sheet, "C1 = 3");
         process_command(&mut sheet, "D1 = 5");
-        
+
         // Trigger autofill for next 3 cells
         process_command(&mut sheet, "E1=AUTOFILL(E1:F1)");
-        
+
         // Verify Fibonacci continuation (3, 5, 8)
-        assert_eq!(sheet.cells[0][4].value, 8);  // E1
-        assert_eq!(sheet.cells[0][5].value, 13);  // F1
+        assert_eq!(sheet.cells[0][4].value, 8); // E1
+        assert_eq!(sheet.cells[0][5].value, 13); // F1
     }
 
     #[test]
     fn test_autofill_horizontal_geometric() {
         let mut sheet = create_test_sheet(5, 10, true);
-        
+
         // Set up geometric sequence (3, 9, 27)
         process_command(&mut sheet, "A1 = 3");
         process_command(&mut sheet, "B1 = 9");
         process_command(&mut sheet, "C1 = 27");
-        
+
         // Trigger autofill for next 2 cells
         process_command(&mut sheet, "D1=AUTOFILL(D1:E1)");
-        
+
         // Verify geometric continuation (81, 243)
-        assert_eq!(sheet.cells[0][3].value, 81);   // D1
-        assert_eq!(sheet.cells[0][4].value, 243);  // E1
+        assert_eq!(sheet.cells[0][3].value, 81); // D1
+        assert_eq!(sheet.cells[0][4].value, 243); // E1
     }
 
     #[test]
     fn test_autofill_horizontal_arithmetic() {
         let mut sheet = create_test_sheet(5, 10, true);
-        
+
         // Set up geometric sequence (3, 9, 27)
         process_command(&mut sheet, "A1 = 1");
         process_command(&mut sheet, "B1 = 2");
         process_command(&mut sheet, "C1 = 3");
-        
+
         // Trigger autofill for next 2 cells
         process_command(&mut sheet, "D1=AUTOFILL(D1:E1)");
-        
-        // Verify geometric continuation (81, 243)
-        assert_eq!(sheet.cells[0][3].value, 4);   // D1
-        assert_eq!(sheet.cells[0][4].value, 5);  // E1
-    }
 
+        // Verify geometric continuation (81, 243)
+        assert_eq!(sheet.cells[0][3].value, 4); // D1
+        assert_eq!(sheet.cells[0][4].value, 5); // E1
+    }
 
     #[test]
     fn test_autofill_horizontal_constant() {
         let mut sheet = create_test_sheet(5, 10, true);
-        
+
         // Set up geometric sequence (3, 9, 27)
         process_command(&mut sheet, "A1 = 3");
         process_command(&mut sheet, "B1 = 3");
         process_command(&mut sheet, "C1 = 3");
-        
+
         // Trigger autofill for next 2 cells
         process_command(&mut sheet, "D1=AUTOFILL(D1:E1)");
-        
-        // Verify geometric continuation (81, 243)
-        assert_eq!(sheet.cells[0][3].value, 3);   // D1
-        assert_eq!(sheet.cells[0][4].value, 3);  // E1
-    }
 
+        // Verify geometric continuation (81, 243)
+        assert_eq!(sheet.cells[0][3].value, 3); // D1
+        assert_eq!(sheet.cells[0][4].value, 3); // E1
+    }
 
     #[test]
     fn test_autofill_horizontal_triangular() {
         let mut sheet = create_test_sheet(5, 10, true);
-        
+
         // Set up geometric sequence (3, 9, 27)
         process_command(&mut sheet, "A1 = 1");
         process_command(&mut sheet, "B1 = 3");
         process_command(&mut sheet, "C1 = 6");
-        
+
         // Trigger autofill for next 2 cells
         process_command(&mut sheet, "D1=AUTOFILL(D1:E1)");
-        
+
         // Verify geometric continuation (81, 243)
-        assert_eq!(sheet.cells[0][3].value, 10);   // D1
-        assert_eq!(sheet.cells[0][4].value, 15);  // E1
+        assert_eq!(sheet.cells[0][3].value, 10); // D1
+        assert_eq!(sheet.cells[0][4].value, 15); // E1
     }
 
     #[test]
     fn test_autofill_horizontal_factorial() {
         let mut sheet = create_test_sheet(5, 10, true);
-        
+
         // Set up geometric sequence (3, 9, 27)
         process_command(&mut sheet, "A1 = 1");
         process_command(&mut sheet, "B1 = 2");
         process_command(&mut sheet, "C1 = 6");
-        
+
         // Trigger autofill for next 2 cells
         process_command(&mut sheet, "D1=AUTOFILL(D1:E1)");
-        
-        // Verify geometric continuation (81, 243)
-        assert_eq!(sheet.cells[0][3].value, 24);   // D1
-        assert_eq!(sheet.cells[0][4].value, 120);  // E1
-    }
 
+        // Verify geometric continuation (81, 243)
+        assert_eq!(sheet.cells[0][3].value, 24); // D1
+        assert_eq!(sheet.cells[0][4].value, 120); // E1
+    }
 
     #[test]
     fn test_autofill_constant_pattern() {
         let mut sheet = create_test_sheet(10, 10, true);
-        
+
         // Set up constant pattern (5, 5, 5)
         process_command(&mut sheet, "A1 = 5");
         process_command(&mut sheet, "A2 = 5");
         process_command(&mut sheet, "A3 = 5");
-        
+
         // Trigger autofill for next 3 cells
         process_command(&mut sheet, "A4=AUTOFILL(A4:A6)");
-        
+
         // Verify constant continuation (5, 5, 5)
         assert_eq!(sheet.cells[3][0].value, 5);
         assert_eq!(sheet.cells[4][0].value, 5);
@@ -1535,21 +1670,20 @@ mod tests {
     #[test]
     fn test_autofill_arithmetic_pattern() {
         let mut sheet = create_test_sheet(10, 10, true);
-        
+
         // Set up arithmetic sequence (10, 20, 30)
         process_command(&mut sheet, "A1 = 10");
         process_command(&mut sheet, "A2 = 20");
         process_command(&mut sheet, "A3 = 30");
-        
+
         // Trigger autofill for next 3 cells
         process_command(&mut sheet, "A4=AUTOFILL(A4:A6)");
-        
+
         // Verify arithmetic continuation (40, 50, 60)
         assert_eq!(sheet.cells[3][0].value, 40);
         assert_eq!(sheet.cells[4][0].value, 50);
         assert_eq!(sheet.cells[5][0].value, 60);
     }
-
 
     #[test]
     fn test_update_cell_valid_formula_no_circular() {
@@ -1562,15 +1696,39 @@ mod tests {
 
         let cell = &sheet.cells[row as usize][col as usize];
         assert!(cell.is_formula, "Cell should be marked as a formula");
-        assert_eq!(cell.formula, Some(formula.to_string()), "Formula should be stored");
-        assert!(!cell.has_circular, "Cell should not have circular dependency");
-        assert!(sheet.dependency_graph.contains_key(&(row, col)), "Dependency graph should contain the cell");
+        assert_eq!(
+            cell.formula,
+            Some(formula.to_string()),
+            "Formula should be stored"
+        );
+        assert!(
+            !cell.has_circular,
+            "Cell should not have circular dependency"
+        );
+        assert!(
+            sheet.dependency_graph.contains_key(&(row, col)),
+            "Dependency graph should contain the cell"
+        );
 
         // Check dependencies
         let deps = sheet.dependency_graph.get(&(row, col)).unwrap();
-        assert_eq!(deps.dependencies.len(), 2, "Should have two dependencies (A2 and B3)");
-        assert!(deps.dependencies.iter().any(|d| matches!(d, DependencyType::Single { row: 1, col: 0 })), "Should depend on A2");
-        assert!(deps.dependencies.iter().any(|d| matches!(d, DependencyType::Single { row: 2, col: 1 })), "Should depend on B3");
+        assert_eq!(
+            deps.dependencies.len(),
+            2,
+            "Should have two dependencies (A2 and B3)"
+        );
+        assert!(
+            deps.dependencies
+                .iter()
+                .any(|d| matches!(d, DependencyType::Single { row: 1, col: 0 })),
+            "Should depend on A2"
+        );
+        assert!(
+            deps.dependencies
+                .iter()
+                .any(|d| matches!(d, DependencyType::Single { row: 2, col: 1 })),
+            "Should depend on B3"
+        );
     }
 
     #[test]
@@ -1582,8 +1740,15 @@ mod tests {
 
         let cell = &sheet.cells[0][0];
         assert!(cell.is_formula, "Cell should be marked as a formula");
-        assert_eq!(cell.formula, Some("A2".to_string()), "Formula should be stored");
-        assert!(cell.has_circular, "Cell should be marked as having circular dependency");
+        assert_eq!(
+            cell.formula,
+            Some("A2".to_string()),
+            "Formula should be stored"
+        );
+        assert!(
+            cell.has_circular,
+            "Cell should be marked as having circular dependency"
+        );
     }
 
     #[test]
@@ -1596,9 +1761,11 @@ mod tests {
         let (result, is_error) = evaluate_expression(&mut sheet, expr, row, col);
 
         assert_eq!(result, 5, "SLEEP should return the duration as the result");
-        assert!(!is_error, "SLEEP with valid duration should not result in an error");
+        assert!(
+            !is_error,
+            "SLEEP with valid duration should not result in an error"
+        );
     }
-
 
     #[test]
     fn test_has_circular_dependency_range_indirect() {
@@ -1620,7 +1787,10 @@ mod tests {
         let has_cycle = has_circular_dependency(&mut sheet, start_row, start_col, formula);
 
         // Assertions
-        assert!(has_cycle, "Should detect circular dependency via DFS from B1 to A1");
+        assert!(
+            has_cycle,
+            "Should detect circular dependency via DFS from B1 to A1"
+        );
         assert!(
             sheet.cells[start_row as usize][start_col as usize].has_circular,
             "A1 should have has_circular flag set"
@@ -1674,7 +1844,8 @@ mod tests {
         );
         // Update A1's dependents to include C1
         if let Some(deps) = sheet.dependency_graph.get_mut(&(0, 0)) {
-            deps.dependents.push(DependencyType::Single { row: 0, col: 2 });
+            deps.dependents
+                .push(DependencyType::Single { row: 0, col: 2 });
         }
 
         // Call recalculate_dependents starting from A1
@@ -1695,4 +1866,3 @@ mod tests {
         );
     }
 }
-
