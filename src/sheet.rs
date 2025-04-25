@@ -28,8 +28,6 @@ pub fn create_sheet(rows: i32, cols: i32, extension_enabled: bool) -> Option<She
         output_enabled: true,
         circular_dependency_detected: false,
         extension_enabled,
-        command_history: Vec::with_capacity(10),
-        command_position: 0,
         max_history_size: 10,
         dependency_graph: HashMap::new(),
         undo_stack: Vec::new(),
@@ -85,29 +83,6 @@ pub fn scroll_to_cell(sheet: &mut Sheet, row: i32, col: i32) {
         println!("Invalid cell coordinates for scroll");
     }
 }
-
-// pub fn add_to_history(sheet: &mut Sheet, command: &str) {
-//     if command.len() == 1 && "wasd".contains(command) ||
-//        command == "undo" ||
-//        command == "redo" ||
-//        command == "disable_output" ||
-//        command == "enable_output" ||
-//        command.starts_with("scroll_to ") ||
-//        command.contains("AUTOFILL") {
-//         return;
-//     }
-
-//     if sheet.command_position < sheet.command_history.len() {
-//         sheet.command_history.truncate(sheet.command_position);
-//     }
-
-//     sheet.command_history.push(command.to_string());
-//     if sheet.command_history.len() > sheet.max_history_size {
-//         sheet.command_history.remove(0);
-//     } else {
-//         sheet.command_position += 1;
-//     }
-// }
 
 pub fn save_state(sheet: &mut Sheet) {
     if !sheet.extension_enabled {
@@ -982,7 +957,6 @@ pub fn copy_range(
         *CLIPBOARD.lock().unwrap() = Some(Clipboard {
             contents,
             is_cut: false,
-            source_range: None,
         });
         true
     } else {
@@ -1014,7 +988,6 @@ pub fn cut_range(
         *CLIPBOARD.lock().unwrap() = Some(Clipboard {
             contents,
             is_cut: true,
-            source_range: Some((start_row, start_col, end_row, end_col)),
         });
         true
     } else {
