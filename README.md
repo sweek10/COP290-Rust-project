@@ -14,8 +14,7 @@ Sambhav Singhwi (2023CS10722)
 
 # Few Followups #
 ## 1) ## 
-If any .csv or .xlsx files other than those provided in the submitted zip folder are to be taken as input for The FILE LOADING EXTENSION implemented , the Makefile has to be changed from the default "example.csv"   
-in **make ext1** input to the required file name .
+If any .csv or .xlsx file is to be loaded in the spreasheet while running the extension then the following command should be used - **make ext1-some_file.csv** in case of a .csv file and similarly **make ext1-some_file.xlsx** for loading a .xlsx file.
 ## 2) ##
 After the presentation of our extensions on 22nd April, we have improved our web interface to support toggling between dark and light themes and also correct the **UNDO-REDO EXTENSION** which now works appropriately  
 for all the file input extension along with other extensions.
