@@ -1,6 +1,25 @@
 use crate::types::{PatternType, Sheet};
 use std::str::FromStr;
 
+/// Parses a cell reference string into row and column indices.
+///
+/// This function converts a cell reference (e.g., "A1") into zero-based row and column indices.
+/// It splits the input string into alphabetic (column) and numeric (row) parts, decodes the column
+/// letters to a number, and adjusts the row number to zero-based indexing.
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet (for bounds checking).
+/// * `ref_str` - The cell reference string (e.g., "A1").
+///
+/// # Returns
+/// An `Option<(i32, i32)>` containing the row and column indices, or `None` if the reference is invalid.
+///
+/// # Example
+/// ```
+/// let mut sheet = create_sheet(10, 10, false).unwrap();
+/// let result = parse_cell_reference(&mut sheet, "B2");
+/// assert_eq!(result, Some((1, 1))); // Row 1, Col 1
+/// ```
 pub fn parse_cell_reference(sheet: &mut Sheet, ref_str: &str) -> Option<(i32, i32)> {
     let ref_str = ref_str.trim();
     let num_start = ref_str.chars().position(|c| c.is_ascii_digit())?;
@@ -20,6 +39,25 @@ pub fn parse_cell_reference(sheet: &mut Sheet, ref_str: &str) -> Option<(i32, i3
     }
 }
 
+/// Parses a range string into start and end row and column indices.
+///
+/// This function converts a range reference (e.g., "A1:B2") into a tuple of
+/// `(start_row, start_col, end_row, end_col)`. It ensures that the start coordinates
+/// are less than or equal to the end coordinates.
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet (for bounds checking).
+/// * `range` - The range string (e.g., "A1:B2").
+///
+/// # Returns
+/// An `Option<(i32, i32, i32, i32)>` containing the start and end indices, or `None` if the range is invalid.
+///
+/// # Example
+/// ```
+/// let mut sheet = create_sheet(10, 10, false).unwrap();
+/// let result = parse_range(&mut sheet, "A1:B2");
+/// assert_eq!(result, Some((0, 0, 1, 1))); // Start: (0,0), End: (1,1)
+/// ```
 pub fn parse_range(sheet: &mut Sheet, range: &str) -> Option<(i32, i32, i32, i32)> {
     let (start, end) = range.split_once(':')?;
     let (start_row, start_col) = parse_cell_reference(sheet, start)?;
@@ -31,6 +69,28 @@ pub fn parse_range(sheet: &mut Sheet, range: &str) -> Option<(i32, i32, i32, i32
     }
 }
 
+/// Calculates the result of a range-based function (e.g., SUM, AVG) over a specified range.
+///
+/// This function applies a mathematical function (e.g., SUM, AVG, MIN, MAX, STDEV) to the values
+/// in the specified range. It supports error handling for invalid ranges or erroneous cells.
+/// For STDEV, it uses Welford's online algorithm to compute the standard deviation.
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet.
+/// * `function` - The function name (e.g., "SUM", "AVG").
+/// * `range` - The range string (e.g., "A1:B2").
+///
+/// # Returns
+/// A `Result<f64, ()>` containing the calculated result or an error if the operation fails.
+///
+/// # Example
+/// ```
+/// let mut sheet = create_sheet(10, 10, false).unwrap();
+/// sheet.cells[0][0].value = 10;
+/// sheet.cells[0][1].value = 20;
+/// let result = calculate_range_function(&mut sheet, "SUM", "A1:B1");
+/// assert_eq!(result, Ok(30.0));
+/// ```
 pub fn calculate_range_function(sheet: &mut Sheet, function: &str, range: &str) -> Result<f64, ()> {
     let (start_row, start_col, end_row, end_col) = match parse_range(sheet, range) {
         Some(range) => range,
@@ -90,6 +150,27 @@ pub fn calculate_range_function(sheet: &mut Sheet, function: &str, range: &str) 
         _ => Err(()),
     }
 }
+
+/// Evaluates a simple arithmetic expression.
+///
+/// This function parses a whitespace-separated arithmetic expression (e.g., "1 + 2 * 3")
+/// and computes the result. It supports addition, subtraction, multiplication, and division.
+/// Division by zero sets the `is_error` flag to true.
+///
+/// # Arguments
+/// * `expr` - The arithmetic expression to evaluate.
+/// * `is_error` - A mutable boolean flag to indicate if an error (e.g., division by zero) occurs.
+///
+/// # Returns
+/// The computed result as an `i32`.
+///
+/// # Example
+/// ```
+/// let mut is_error = false;
+/// let result = evaluate_arithmetic("2 + 3 * 4", &mut is_error);
+/// assert_eq!(result, 14);
+/// assert!(!is_error);
+/// ```
 pub fn evaluate_arithmetic(expr: &str, is_error: &mut bool) -> i32 {
     let tokens: Vec<&str> = expr.split_whitespace().collect();
     if tokens.len() == 1 {
@@ -118,6 +199,23 @@ pub fn evaluate_arithmetic(expr: &str, is_error: &mut bool) -> i32 {
     }
     result
 }
+
+/// Decodes a column string into a zero-based column index.
+///
+/// This function converts a column reference (e.g., "A", "AA") into a zero-based index
+/// using a base-26 system where 'A' is 1, 'B' is 2, etc.
+///
+/// # Arguments
+/// * `col_str` - The column string (e.g., "A", "AA").
+///
+/// # Returns
+/// The zero-based column index as an `i32`.
+///
+/// # Example
+/// ```
+/// let col_index = decode_column("B");
+/// assert_eq!(col_index, 1); // Column B is index 1
+/// ```
 pub fn decode_column(col_str: &str) -> i32 {
     let mut result = 0;
     for c in col_str.chars() {
@@ -126,6 +224,21 @@ pub fn decode_column(col_str: &str) -> i32 {
     result - 1
 }
 
+/// Encodes a zero-based column index into a column string.
+///
+/// This function converts a zero-based column index into a column string (e.g., 0 -> "A", 1 -> "B")
+/// using a base-26 system. The result is appended to the provided string.
+///
+/// # Arguments
+/// * `col` - The zero-based column index.
+/// * `col_str` - A mutable string to store the encoded column.
+///
+/// # Example
+/// ```
+/// let mut col_str = String::new();
+/// encode_column(1, &mut col_str);
+/// assert_eq!(col_str, "B");
+/// ```
 pub fn encode_column(col: i32, col_str: &mut String) {
     let mut col = col + 1;
     while col > 0 {
@@ -137,6 +250,21 @@ pub fn encode_column(col: i32, col_str: &mut String) {
     *col_str = chars.into_iter().collect();
 }
 
+/// Computes the factorial of a number.
+///
+/// This function calculates the factorial of a non-negative integer `n` recursively.
+///
+/// # Arguments
+/// * `n` - The number to compute the factorial for.
+///
+/// # Returns
+/// The factorial of `n` as an `i32`.
+///
+/// # Example
+/// ```
+/// let result = factorial(5);
+/// assert_eq!(result, 120); // 5! = 120
+/// ```
 pub fn factorial(n: i32) -> i32 {
     if n <= 1 {
         1
@@ -145,10 +273,42 @@ pub fn factorial(n: i32) -> i32 {
     }
 }
 
+/// Computes the nth triangular number.
+///
+/// This function calculates the nth triangular number using the formula `n * (n + 1) / 2`.
+///
+/// # Arguments
+/// * `n` - The index of the triangular number.
+///
+/// # Returns
+/// The nth triangular number as an `i32`.
+///
+/// # Example
+/// ```
+/// let result = triangular(4);
+/// assert_eq!(result, 10); // 1 + 2 + 3 + 4 = 10
+/// ```
 pub fn triangular(n: i32) -> i32 {
     n * (n + 1) / 2
 }
 
+/// Checks if a sequence of values follows a factorial pattern.
+///
+/// This function determines if the given sequence of values matches a factorial sequence
+/// (e.g., [1, 2, 6, 24]). If a match is found, it returns the last value and the next index.
+///
+/// # Arguments
+/// * `values` - A slice of `i32` values to check.
+///
+/// # Returns
+/// An `Option<(i32, i32)>` containing the last value and the next index, or `None` if no factorial pattern is found.
+///
+/// # Example
+/// ```
+/// let values = vec![1, 2, 6];
+/// let result = is_factorial_sequence(&values);
+/// assert_eq!(result, Some((6, 3))); // Next is 24 (4!)
+/// ```
 pub fn is_factorial_sequence(values: &[i32]) -> Option<(i32, i32)> {
     let forward_values: Vec<i32> = values.iter().rev().copied().collect();
     if forward_values.is_empty() {
@@ -191,6 +351,23 @@ pub fn is_factorial_sequence(values: &[i32]) -> Option<(i32, i32)> {
     None
 }
 
+/// Checks if a sequence of values follows a triangular number pattern.
+///
+/// This function determines if the given sequence of values matches a triangular number sequence
+/// (e.g., [1, 3, 6, 10]). If a match is found, it returns the last value and the next index.
+///
+/// # Arguments
+/// * `values` - A slice of `i32` values to check.
+///
+/// # Returns
+/// An `Option<(i32, i32)>` containing the last value and the next index, or `None` if no triangular pattern is found.
+///
+/// # Example
+/// ```
+/// let values = vec![1, 3, 6];
+/// let result = is_triangular_sequence(&values);
+/// assert_eq!(result, Some((6, 4))); // Next is 10 (4th triangular number)
+/// ```
 pub fn is_triangular_sequence(values: &[i32]) -> Option<(i32, i32)> {
     let forward_values: Vec<i32> = values.iter().rev().copied().collect();
     if forward_values.is_empty() {
@@ -218,6 +395,30 @@ pub fn is_triangular_sequence(values: &[i32]) -> Option<(i32, i32)> {
     Some((*last_value, next_index))
 }
 
+/// Detects the pattern in a sequence of cell values in a row or column.
+///
+/// This function analyzes the values in a row or column to identify patterns such as constant,
+/// arithmetic, geometric, Fibonacci, factorial, or triangular sequences.
+///
+/// # Arguments
+/// * `sheet` - A reference to the spreadsheet.
+/// * `start_row` - The starting row index of the range.
+/// * `start_col` - The starting column index of the range.
+/// * `end_row` - The ending row index of the range.
+/// * `end_col` - The ending column index of the range.
+///
+/// # Returns
+/// A `PatternType` enum indicating the detected pattern.
+///
+/// # Example
+/// ```
+/// let mut sheet = create_sheet(10, 10, false).unwrap();
+/// sheet.cells[0][0].value = 1;
+/// sheet.cells[1][0].value = 2;
+/// sheet.cells[2][0].value = 3;
+/// let pattern = detect_pattern(&sheet, 3, 0, 3, 0);
+/// assert!(matches!(pattern, PatternType::Arithmetic(1, 1)));
+/// ```
 pub fn detect_pattern(
     sheet: &Sheet,
     start_row: i32,
@@ -297,6 +498,25 @@ pub fn detect_pattern(
     PatternType::Unknown
 }
 
+/// Validates whether a formula is valid for the spreadsheet.
+///
+/// This function checks if the provided formula is syntactically correct and supported by the
+/// spreadsheet. It supports numeric literals, cell references, arithmetic expressions, and specific
+/// functions like SUM, AVG, SLEEP, etc., depending on whether extensions are enabled.
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet.
+/// * `formula` - The formula string to validate.
+///
+/// # Returns
+/// A boolean indicating whether the formula is valid.
+///
+/// # Example
+/// ```
+/// let mut sheet = create_sheet(10, 10, false).unwrap();
+/// let is_valid = is_valid_formula(&mut sheet, "=A1+5");
+/// assert!(is_valid);
+/// ```
 pub fn is_valid_formula(sheet: &mut Sheet, formula: &str) -> bool {
     let formula = formula.trim();
     if sheet.extension_enabled {
@@ -352,6 +572,25 @@ pub fn is_valid_formula(sheet: &mut Sheet, formula: &str) -> bool {
     parse_cell_reference(sheet, formula).is_some() || formula.parse::<i32>().is_ok()
 }
 
+/// Validates whether a command is valid for the spreadsheet.
+///
+/// This function checks if the provided command is supported by the spreadsheet. It supports
+/// navigation commands (w, a, s, d), output control commands, and various extension commands
+/// like undo, redo, row/column deletion, copy/paste, and graphing.
+///
+/// # Arguments
+/// * `sheet` - A mutable reference to the spreadsheet.
+/// * `command` - The command string to validate.
+///
+/// # Returns
+/// A boolean indicating whether the command is valid.
+///
+/// # Example
+/// ```
+/// let mut sheet = create_sheet(10, 10, true).unwrap();
+/// let is_valid = is_valid_command(&mut sheet, "A1=5");
+/// assert!(is_valid);
+/// ```
 pub fn is_valid_command(sheet: &mut Sheet, command: &str) -> bool {
     if command.len() == 1 && "wasdq".contains(command) {
         return true;
