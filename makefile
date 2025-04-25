@@ -9,10 +9,15 @@ build:
 run: build
 	./target/release/spreadsheet 999 18278
 
-# Build & run the web server extension (requires sudo for port 80)
+# Build & run the web server extension without CSV file
 ext1:
 	cargo build --release
 	./target/release/spreadsheet --extension 999 18278
+
+# Build & run the web server extension with CSV file
+ext1-%:
+	cargo build --release
+	./target/release/spreadsheet --extension 999 18278 $*
 
 # Clean everything
 clean:
