@@ -1,63 +1,532 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <style>
+    /* CSS Variables for theme colors */
+:root {
+    /* Light theme (default) */
+    --bg-primary: #f8fafc;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #f1f5f9;
+    --text-primary: #334155;
+    --text-secondary: #475569;
+    --text-heading: #1e293b;
+    --border-color: #e2e8f0;
+    --accent-color: #0ea5e9;
+    --accent-hover: #0284c7;
+    --shadow-color: rgba(148, 163, 184, 0.1);
+    --success-bg: #f0fdf4;
+    --success-text: #166534;
+    --success-border: #dcfce7;
+    --warning-bg: #fffbeb;
+    --warning-text: #92400e;
+    --warning-border: #fef3c7;
+    --error-bg: #fef2f2;
+    --error-text: #991b1b;
+    --error-border: #fee2e2;
+    --info-bg: #f0f9ff;
+    --info-text: #0c4a6e;
+    --info-border: #e0f2fe;
+}
+
+/* Dark theme */
+[data-theme="dark"] {
+    --bg-primary: #0f172a;
+    --bg-secondary: #1e293b;
+    --bg-tertiary: #334155;
+    --text-primary: #e2e8f0;
+    --text-secondary: #cbd5e1;
+    --text-heading: #f8fafc;
+    --border-color: #475569;
+    --accent-color: #38bdf8;
+    --accent-hover: #7dd3fc;
+    --shadow-color: rgba(0, 0, 0, 0.3);
+    --success-bg: #064e3b;
+    --success-text: #a7f3d0;
+    --success-border: #065f46;
+    --warning-bg: #78350f;
+    --warning-text: #fde68a;
+    --warning-border: #92400e;
+    --error-bg: #7f1d1d;
+    --error-text: #fecaca;
+    --error-border: #991b1b;
+    --info-bg: #0c4a6e;
+    --info-text: #bae6fd;
+    --info-border: #0369a1;
+}
+
+/* Dark mode toggle switch */
+.theme-switch-wrapper {
+    display: flex;
+    align-items: center;
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 100;
+}
+
+.theme-switch {
+    display: inline-block;
+    height: 24px;
+    position: relative;
+    width: 50px;
+}
+
+.theme-switch input {
+    display: none;
+}
+
+.slider {
+    background-color: var(--bg-tertiary);
+    bottom: 0;
+    cursor: pointer;
+    left: 0;
+    position: absolute;
+    right: 0;
+    top: 0;
+    transition: .4s;
+    border-radius: 34px;
+    border: 1px solid var(--border-color);
+}
+
+.slider:before {
+    background-color: var(--accent-color);
+    bottom: 3px;
+    content: "";
+    height: 16px;
+    left: 4px;
+    position: absolute;
+    transition: .4s;
+    width: 16px;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background-color: var(--bg-tertiary);
+}
+
+input:checked + .slider:before {
+    transform: translateX(26px);
+}
+
+/* Reset and base styles with theme variables */
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    margin: 0;
+    padding: 40px;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 30px;
+    background-color: var(--bg-secondary);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px var(--shadow-color);
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Header and text elements */
+h1, h2, h3 {
+    color: var(--text-heading);
+    margin-top: 0;
+    transition: color 0.3s ease;
+}
+
+h1 {
+    font-size: 28px;
+    margin-bottom: 24px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--border-color);
+    transition: border-color 0.3s ease;
+}
+
+/* Status section - theme aware */
+.status {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background-color: var(--bg-tertiary);
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 24px;
+    border-left: 4px solid var(--text-secondary);
+    display: flex;
+    align-items: center;
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+.status-success {
+    border-left-color: var(--success-text);
+    color: var(--success-text);
+    background-color: var(--success-bg);
+}
+
+.status-warning {
+    border-left-color: var(--warning-text);
+    color: var(--warning-text);
+    background-color: var(--warning-bg);
+}
+
+.status-error {
+    border-left-color: var(--error-text);
+    color: var(--error-text);
+    background-color: var(--error-bg);
+}
+
+/* Message area with theme styling */
+.message {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-left: 4px solid var(--text-secondary);
+    padding: 16px 20px;
+    font-family: 'Fira Code', 'Menlo', monospace;
+    border-radius: 8px;
+    white-space: pre-wrap;
+    overflow-x: auto;
+    margin-bottom: 24px;
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Table with theme-aware styling */
+table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 24px 0;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px var(--shadow-color);
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+th {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-weight: 600;
+    text-align: left;
+    padding: 14px 18px;
+    font-size: 14px;
+    border-bottom: 2px solid var(--border-color);
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+td {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    transition: border-color 0.3s ease, color 0.3s ease, background-color 0.3s ease;
+}
+
+tr:last-child td {
+    border-bottom: none;
+}
+
+tr:hover td {
+    background-color: var(--bg-primary);
+}
+
+/* Alternating row colors for readability */
+tr:nth-child(even) {
+    background-color: var(--bg-primary);
+    transition: background-color 0.3s ease;
+}
+
+/* Row number styling */
+.row-number {
+    background-color: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-weight: 500;
+    text-align: center;
+    border-right: 1px solid var(--border-color);
+    width: 60px;
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Text formatting */
+.bold {
+    font-weight: 600;
+    color: var(--text-heading);
+    transition: color 0.3s ease;
+}
+
+.italic {
+    font-style: italic;
+    color: var(--text-secondary);
+    transition: color 0.3s ease;
+}
+
+.underline {
+    text-decoration: none;
+    border-bottom: 2px solid var(--text-secondary);
+    padding-bottom: 1px;
+    transition: border-color 0.3s ease;
+}
+
+/* Form elements */
+form {
+    margin-top: 24px;
+    display: flex;
+    gap: 12px;
+}
+
+input[type="text"],
+textarea,
+select {
+    flex: 1;
+    padding: 12px 16px;
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    border-radius: 6px;
+    font-size: 15px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.3s ease, color 0.3s ease;
+}
+
+input[type="text"]:focus,
+textarea:focus,
+select:focus {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+    outline: none;
+}
+
+/* Button styling */
+button {
+    padding: 12px 20px;
+    background-color: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+button:hover {
+    background-color: var(--accent-hover);
+}
+
+button.secondary {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+button.secondary:hover {
+    background-color: var(--border-color);
+}
+
+/* Links */
+a {
+    color: var(--accent-color);
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+
+a:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+}
+
+/* Card components */
+.card {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 10px var(--shadow-color);
+    transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card-header {
+    margin: -20px -20px 20px;
+    padding: 16px 20px;
+    background-color: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+    border-radius: 8px 8px 0 0;
+    font-weight: 600;
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Alert messages */
+.alert {
+    padding: 16px;
+    margin-bottom: 20px;
+    border-radius: 6px;
+    border: 1px solid;
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+.alert-success {
+    background-color: var(--success-bg);
+    color: var(--success-text);
+    border-color: var(--success-border);
+}
+
+.alert-info {
+    background-color: var(--info-bg);
+    color: var(--info-text);
+    border-color: var(--info-border);
+}
+
+.alert-warning {
+    background-color: var(--warning-bg);
+    color: var(--warning-text);
+    border-color: var(--warning-border);
+}
+
+.alert-error {
+    background-color: var(--error-bg);
+    color: var(--error-text);
+    border-color: var(--error-border);
+}
+
+/* Badges */
+.badge {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 4px 8px;
+    border-radius: 20px;
+    margin-right: 6px;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.badge-blue {
+    background-color: var(--info-bg);
+    color: var(--info-text);
+}
+
+.badge-green {
+    background-color: var(--success-bg);
+    color: var(--success-text);
+}
+
+.badge-yellow {
+    background-color: var(--warning-bg);
+    color: var(--warning-text);
+}
+
+.badge-red {
+    background-color: var(--error-bg);
+    color: var(--error-text);
+}
+
+/* Navigation */
+.nav {
+    display: flex;
+    background-color: var(--bg-secondary);
+    padding: 4px;
+    border-radius: 8px;
+    margin-bottom: 24px;
+    border: 1px solid var(--border-color);
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.nav-item {
+    padding: 10px 16px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    border-radius: 6px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.nav-item:hover {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.nav-item.active {
+    background-color: var(--accent-color);
+    color: white;
+}
+
+/* For mobile responsiveness */
+@media (max-width: 768px) {
+    body {
+        padding: 20px;
+    }
+    
+    .container {
+        padding: 20px;
+    }
+    
+    form {
+        flex-direction: column;
+    }
+    
+    button {
+        width: 100%;
+    }
+    
+    table {
+        display: block;
+        overflow-x: auto;
+    }
+    
+    .theme-switch-wrapper {
+        top: 10px;
+        right: 10px;
+    }
+}
+</style>
+
+<script>
+// Add this script to your HTML file
+document.addEventListener('DOMContentLoaded', function() {
+    // Create the theme toggle switch
+    const themeSwitch = document.createElement('div');
+    themeSwitch.className = 'theme-switch-wrapper';
+    themeSwitch.innerHTML = `
+        <label class="theme-switch" for="checkbox">
+            <input type="checkbox" id="checkbox" />
+            <div class="slider"></div>
+        </label>
+    `;
+    document.body.appendChild(themeSwitch);
+    
+    // Get the checkbox
+    const toggleSwitch = document.querySelector('#checkbox');
+    
+    // Function to switch theme
+    function switchTheme(e) {
+        if (e.target.checked) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            localStorage.setItem('theme', 'dark');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'light');
+            localStorage.setItem('theme', 'light');
+        }    
+    }
+    
+    // Event listener for the toggle
+    toggleSwitch.addEventListener('change', switchTheme, false);
+    
+    // Check for saved user preference
+    const currentTheme = localStorage.getItem('theme') || 'light';
+    
+    if (currentTheme === 'dark') {
+        toggleSwitch.checked = true;
+        document.documentElement.setAttribute('data-theme', 'dark');
+    }
+});
+</script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Spreadsheet</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-        }
-        table {
-            border-collapse: collapse;
-            margin-bottom: 20px;
-        }
-        th, td {
-            border: 1px solid #ccc;
-            padding: 8px;
-            text-align: center;
-            min-width: 60px;
-        }
-        th {
-            background-color: #f0f0f0;
-        }
-        .row-number {
-            width: 50px;
-            background-color: #f0f0f0;
-        }
-        .bold {
-            font-weight: bold;
-        }
-        .italic {
-            font-style: italic;
-        }
-        .underline {
-            text-decoration: underline;
-        }
-        button {
-            margin-right: 10px;
-            padding: 8px 16px;
-        }
-        input[type="text"] {
-            padding: 8px;
-            width: 300px;
-        }
-        .status {
-            margin-bottom: 10px;
-        }
-        .message {
-            margin: 10px 0;
-            padding: 10px;
-            background-color: #f0f0f0;
-            border: 1px solid #ccc;
-            white-space: pre;
-            font-family: monospace;
-            max-width: 100%;
-            overflow-x: auto;
-            line-height: 1.2;
-        }
-    </style>
+
 </head>
 <body>
     <div class="status">
